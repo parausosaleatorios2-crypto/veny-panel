@@ -1,14 +1,15 @@
--- Veny Panel - Versão Ultra Profissional
--- Com botão de abrir e painel central
+-- Veny Panel - Versão Corrigida
+-- Com botão de abrir, painel central e Fly melhorado
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
 
 -- Configurações
-local FlySpeed = 50
+local FlySpeed = 100 -- Velocidade aumentada
 local TeleportPosition1 = CFrame.new(0, 50, 0)
 local TeleportPosition2 = CFrame.new(100, 50, 0)
 
@@ -59,7 +60,6 @@ local function Notify(title, message, duration)
         Stroke.Thickness = 1.5
         Stroke.Parent = Notification
         
-        -- Gradiente de fundo
         local Gradient = Instance.new("UIGradient")
         Gradient.Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Color3.new(0.1, 0.1, 0.1)),
@@ -100,7 +100,6 @@ local function Notify(title, message, duration)
         MessageLabel.TextColor3 = Color3.new(0.7, 0.7, 0.7)
         MessageLabel.TextXAlignment = Enum.TextXAlignment.Left
         
-        -- Empurrar notificações existentes
         local existingNotifications = ScreenGui:GetChildren()
         for _, notif in pairs(existingNotifications) do
             if notif ~= Notification and notif:IsA("Frame") then
@@ -110,7 +109,6 @@ local function Notify(title, message, duration)
             end
         end
         
-        -- Animação de entrada
         Notification.Transparency = 1
         
         TweenService:Create(Notification, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {
@@ -118,7 +116,6 @@ local function Notify(title, message, duration)
             Transparency = 0
         }):Play()
         
-        -- Remover após duration
         task.delay(duration, function()
             pcall(function()
                 TweenService:Create(Notification, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {
@@ -173,7 +170,7 @@ local function DisableESP()
     Notify("ESP", "Sistema de ESP desativado", 2)
 end
 
--- Fly Functions
+-- Fly Functions (Melhorado)
 local function EnableFly()
     if Fly_On then return end
     Fly_On = true
@@ -185,19 +182,24 @@ local function EnableFly()
     if not root or not hum then return end
     
     pcall(function()
+        -- Usar BodyVelocity com força máxima
         FlyBody = Instance.new("BodyVelocity")
-        FlyBody.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        FlyBody.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
         FlyBody.Velocity = Vector3.new(0, 0, 0)
         FlyBody.Parent = root
         
         FlyGyro = Instance.new("BodyGyro")
-        FlyGyro.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        FlyGyro.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
         FlyGyro.CFrame = root.CFrame
         FlyGyro.Parent = root
         
+        -- Desativar estados que causam detecção
         hum.PlatformStand = true
+        hum.JumpPower = 0
+        hum.AutoRotate = false
     end)
     
+    -- Loop de movimento mais suave
     task.spawn(function()
         while Fly_On do
             pcall(function()
@@ -231,7 +233,8 @@ local function EnableFly()
                     FlyGyro.CFrame = Camera.CFrame
                 end
             end)
-            task.wait()
+            
+            RunService.RenderStepped:Wait()
         end
     end)
     
@@ -254,6 +257,8 @@ local function DisableFly()
         local hum = char:FindFirstChild("Humanoid")
         if hum then
             hum.PlatformStand = false
+            hum.JumpPower = 50
+            hum.AutoRotate = true
         end
     end
     
@@ -293,27 +298,28 @@ local function PrevPath()
     TeleportToPath(CurrentPath)
 end
 
--- Criar UI Ultra Profissional
+-- Criar UI
 local function CreateUI()
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "VenyPanel"
     ScreenGui.Parent = game:GetService("CoreGui")
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
-    -- Botão para abrir/fechar
+    -- Botão para abrir/fechar (sempre visível)
     local ToggleButton = Instance.new("TextButton")
     ToggleButton.Name = "ToggleButton"
     ToggleButton.Parent = ScreenGui
-    ToggleButton.Size = UDim2.new(0, 120, 0, 40)
-    ToggleButton.Position = UDim2.new(0.5, -60, 0, 10)
+    ToggleButton.Size = UDim2.new(0, 150, 0, 40)
+    ToggleButton.Position = UDim2.new(0.5, -75, 0, 10)
     ToggleButton.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
     ToggleButton.BackgroundTransparency = 0.1
     ToggleButton.BorderSizePixel = 0
-    ToggleButton.Text = "VENY PANEL"
+    ToggleButton.Text = "⚡ VENY PANEL ⚡"
     ToggleButton.Font = Enum.Font.GothamBlack
     ToggleButton.TextSize = 16
     ToggleButton.TextColor3 = Color3.new(1, 1, 1)
     ToggleButton.AutoButtonColor = false
+    ToggleButton.ZIndex = 10
     
     local ToggleCorner = Instance.new("UICorner")
     ToggleCorner.CornerRadius = UDim.new(0, 12)
@@ -325,7 +331,6 @@ local function CreateUI()
     ToggleStroke.Thickness = 2
     ToggleStroke.Parent = ToggleButton
     
-    -- Gradiente do botão
     local ToggleGradient = Instance.new("UIGradient")
     ToggleGradient.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.new(0.2, 0.6, 1)),
@@ -334,20 +339,19 @@ local function CreateUI()
     ToggleGradient.Rotation = 45
     ToggleGradient.Parent = ToggleButton
     
-    -- Efeito hover no botão
     ToggleButton.MouseEnter:Connect(function()
         TweenService:Create(ToggleButton, TweenInfo.new(0.3), {
-            Size = UDim2.new(0, 130, 0, 45)
+            Size = UDim2.new(0, 160, 0, 45)
         }):Play()
     end)
     
     ToggleButton.MouseLeave:Connect(function()
         TweenService:Create(ToggleButton, TweenInfo.new(0.3), {
-            Size = UDim2.new(0, 120, 0, 40)
+            Size = UDim2.new(0, 150, 0, 40)
         }):Play()
     end)
     
-    -- Container principal (Centralizado)
+    -- Container principal
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.Parent = ScreenGui
@@ -359,6 +363,7 @@ local function CreateUI()
     MainFrame.Active = true
     MainFrame.Draggable = true
     MainFrame.Visible = false
+    MainFrame.ZIndex = 5
     
     local MainCorner = Instance.new("UICorner")
     MainCorner.CornerRadius = UDim.new(0, 20)
@@ -370,7 +375,6 @@ local function CreateUI()
     MainStroke.Thickness = 2
     MainStroke.Parent = MainFrame
     
-    -- Gradiente do frame principal
     local MainGradient = Instance.new("UIGradient")
     MainGradient.Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, Color3.new(0.1, 0.1, 0.15)),
@@ -486,7 +490,6 @@ local function CreateUI()
         Gradient.Rotation = 90
         Gradient.Parent = Button
         
-        -- Efeito hover
         Button.MouseEnter:Connect(function()
             TweenService:Create(Button, TweenInfo.new(0.3), {
                 BackgroundTransparency = 0.7,
@@ -501,7 +504,6 @@ local function CreateUI()
             }):Play()
         end)
         
-        -- Efeito clique
         Button.MouseButton1Click:Connect(function()
             TweenService:Create(Button, TweenInfo.new(0.1), {
                 Size = UDim2.new(1, -20, 0, 40)
@@ -519,7 +521,6 @@ local function CreateUI()
     local ESPButton = CreatePremiumButton("🟢 ESP: OFF", 1)
     local FlyButton = CreatePremiumButton("🪽 Fly: OFF", 2)
     
-    -- Separador
     local Separator1 = Instance.new("Frame")
     Separator1.Parent = ScrollFrame
     Separator1.Size = UDim2.new(1, 0, 0, 2)
