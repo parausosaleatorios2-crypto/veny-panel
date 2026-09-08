@@ -1,20 +1,19 @@
 --[[
     Veny Combat Panel - LocalScript
-    For authorized development/testing purposes only.
-    Modern UI, ESP, Tracers, Aimbot, Aimlock, FOV, etc.
+    Coloque este script em StarterPlayer > StarterPlayerScripts ou StarterGui
+    Interface moderna com ESP, Tracers, Aimbot, Aimlock, FOV, etc.
 --]]
 
--- Services
+-- Serviços
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Camera = workspace.CurrentCamera
 
--- Local Player
 local LocalPlayer = Players.LocalPlayer
 
--- Settings
+-- Configurações
 local Settings = {
     ESP = false,
     Tracers = false,
@@ -22,60 +21,51 @@ local Settings = {
     Aimlock = false,
     TeamCheck = false,
     VisibilityCheck = false,
-    TargetPart = "Head", -- "Head", "Neck", "Chest"
-    FOV = 120,           -- Pixel radius
+    TargetPart = "Head",
+    FOV = 120,
     ShowFOV = true,
     Smoothness = 5,
     MaxDistance = 2000,
 }
 
--- Container for all created UI elements, connections, drawings, ESP objects
+-- Variáveis globais
 local UI = {}
 local Connections = {}
-local ESPObjects = {}       -- [Player] = { BillboardGui, Frame }
-local TracerLines = {}      -- [Player] = Frame (line)
-local CurrentTarget = nil   -- Player currently locked (for Aimlock)
+local ESPObjects = {}
+local TracerFrames = {}
+local CurrentTarget = nil
 local lastNotifiedTarget = nil
+local NotificationContainer = nil
 
--- Utility: safe find first child
-local function FindFirstChild(parent, name)
-    return parent and parent:FindFirstChild(name)
-end
-
--- Utility: get character of a player
+-- Funções utilitárias
 local function GetCharacter(player)
     return player and player.Character
 end
 
--- Utility: get humanoid of a player
 local function GetHumanoid(player)
     local char = GetCharacter(player)
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
--- Utility: get target part based on settings
 local function GetTargetPart(character)
     if not character then return nil end
-    local targetPartName = Settings.TargetPart
-    if targetPartName == "Head" then
+    local partName = Settings.TargetPart
+    if partName == "Head" then
         return character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
-    elseif targetPartName == "Chest" then
+    elseif partName == "Chest" then
         return character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart")
-    elseif targetPartName == "Neck" then
+    elseif partName == "Neck" then
         local head = character:FindFirstChild("Head")
         local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
         if head and torso then
-            -- Return a CFrame that is midpoint
             return CFrame.new((head.Position + torso.Position) / 2)
         else
             return head or torso or character:FindFirstChild("HumanoidRootPart")
         end
     end
-    -- Fallback
     return character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
 end
 
--- Utility: get position of target part (works for CFrame or Part)
 local function GetTargetPosition(character)
     local part = GetTargetPart(character)
     if typeof(part) == "CFrame" then
@@ -86,7 +76,16 @@ local function GetTargetPosition(character)
     return nil
 end
 
--- Utility: is player a valid target?
+local function WorldToScreen(worldPos)
+    local screenPos, onScreen = Camera:WorldToScreenPoint(worldPos)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+end
+
+local function IsInsideFOV(screenPos)
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    return (screenPos - center).Magnitude <= Settings.FOV
+end
+
 local function IsTargetValid(player)
     if player == LocalPlayer then return false end
     local character = GetCharacter(player)
@@ -96,72 +95,47 @@ local function IsTargetValid(player)
     local targetPos = GetTargetPosition(character)
     if not targetPos then return false end
 
-    -- Distance check
-    if Settings.MaxDistance and Settings.MaxDistance > 0 then
-        local dist = (targetPos - Camera.CFrame.Position).Magnitude
-        if dist > Settings.MaxDistance then return false end
+    if Settings.MaxDistance > 0 then
+        if (targetPos - Camera.CFrame.Position).Magnitude > Settings.MaxDistance then return false end
     end
 
-    -- Team check
-    if Settings.TeamCheck then
-        if player.Team == LocalPlayer.Team then return false end
-    end
+    if Settings.TeamCheck and player.Team == LocalPlayer.Team then return false end
 
-    -- Visibility check
     if Settings.VisibilityCheck then
         local rayParams = RaycastParams.new()
         rayParams.FilterType = Enum.RaycastFilterType.Blacklist
         rayParams.FilterDescendantsInstances = {character}
-        local rayDirection = (targetPos - Camera.CFrame.Position).Unit
-        local rayDistance = (targetPos - Camera.CFrame.Position).Magnitude
-        local rayResult = workspace:Raycast(Camera.CFrame.Position, rayDirection * rayDistance, rayParams)
-        if rayResult then
-            -- Something hit before reaching target -> not visible
-            return false
-        end
+        local rayDir = (targetPos - Camera.CFrame.Position).Unit
+        local rayDist = (targetPos - Camera.CFrame.Position).Magnitude
+        local rayResult = workspace:Raycast(Camera.CFrame.Position, rayDir * rayDist, rayParams)
+        if rayResult then return false end
     end
 
     return true
 end
 
--- Utility: get screen position of a world position
-local function WorldToScreen(worldPos)
-    local screenPos, onScreen = Camera:WorldToScreenPoint(worldPos)
-    return Vector2.new(screenPos.X, screenPos.Y), onScreen
-end
-
--- Utility: check if a screen position is inside FOV circle
-local function IsInsideFOV(screenPos)
-    if not Settings.ShowFOV and not Settings.Aimbot then return true end -- If FOV not used, always true
-    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    local distance = (screenPos - center).Magnitude
-    return distance <= Settings.FOV
-end
-
--- Notification system
-local NotificationContainer = nil
-
+-- Notificações
 local function CreateNotification(text)
     if not NotificationContainer then return end
 
-    local notification = Instance.new("Frame")
-    notification.Name = "Notification"
-    notification.Size = UDim2.new(0, 200, 0, 30)
-    notification.Position = UDim2.new(0.5, -100, 1, -40)
-    notification.AnchorPoint = Vector2.new(0.5, 1)
-    notification.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    notification.BackgroundTransparency = 0.1
-    notification.BorderSizePixel = 0
+    local notif = Instance.new("Frame")
+    notif.Size = UDim2.new(0, 200, 0, 30)
+    notif.Position = UDim2.new(0.5, -100, 1, -40)
+    notif.AnchorPoint = Vector2.new(0.5, 1)
+    notif.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    notif.BackgroundTransparency = 0.1
+    notif.BorderSizePixel = 0
+    notif.Parent = NotificationContainer
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = notification
+    corner.Parent = notif
 
     local stroke = Instance.new("UIStroke")
     stroke.Color = Color3.fromRGB(0, 255, 100)
     stroke.Thickness = 1
     stroke.Transparency = 0.3
-    stroke.Parent = notification
+    stroke.Parent = notif
 
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, 0, 1, 0)
@@ -171,77 +145,31 @@ local function CreateNotification(text)
     label.TextSize = 14
     label.TextColor3 = Color3.fromRGB(255, 255, 255)
     label.TextWrapped = true
-    label.Parent = notification
+    label.Parent = notif
 
-    notification.Parent = NotificationContainer
-
-    -- Animate in
-    notification.Position = UDim2.new(0.5, -100, 1, 30)
-    local goal = UDim2.new(0.5, -100, 1, -40)
-    local tweenIn = TweenService:Create(notification, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = goal})
+    notif.Position = UDim2.new(0.5, -100, 1, 30)
+    local tweenIn = TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, -100, 1, -40)})
     tweenIn:Play()
 
-    -- Animate out and destroy after delay
     task.delay(3, function()
-        local goalOut = UDim2.new(0.5, -100, 1, 30)
-        local tweenOut = TweenService:Create(notification, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = goalOut})
+        local tweenOut = TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(0.5, -100, 1, 30)})
         tweenOut:Play()
-        tweenOut.Completed:Connect(function()
-            notification:Destroy()
-        end)
+        tweenOut.Completed:Connect(function() notif:Destroy() end)
     end)
 end
 
--- Cleanup function
-local function Cleanup()
-    -- Disconnect all connections
-    for _, conn in ipairs(Connections) do
-        if typeof(conn) == "RBXScriptConnection" then
-            conn:Disconnect()
-        end
-    end
-    Connections = {}
-
-    -- Remove all ESP objects
-    for _, espData in pairs(ESPObjects) do
-        if espData.BillboardGui then
-            espData.BillboardGui:Destroy()
-        end
-    end
-    ESPObjects = {}
-
-    -- Remove all tracer frames
-    for _, lineFrame in pairs(TracerLines) do
-        if lineFrame then
-            lineFrame:Destroy()
-        end
-    end
-    TracerLines = {}
-
-    -- Remove FOV circle
-    if UI.FOVCircle then
-        UI.FOVCircle:Destroy()
-        UI.FOVCircle = nil
-    end
-
-    -- Reset current target
-    CurrentTarget = nil
-    lastNotifiedTarget = nil
-end
-
--- ESP Functions
-local function CreateESPForPlayer(player)
-    if ESPObjects[player] then return end -- already exists
-    local character = GetCharacter(player)
-    if not character then return end
-    local head = character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+-- ESP
+local function CreateESP(player)
+    if ESPObjects[player] then return end
+    local char = GetCharacter(player)
+    if not char then return end
+    local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
     if not head then return end
 
     local billboard = Instance.new("BillboardGui")
-    billboard.Name = "ESP_" .. player.Name
     billboard.Adornee = head
     billboard.Size = UDim2.new(0, 4, 0, 7)
-    billboard.StudsOffset = Vector3.new(0, 3.5, 0) -- Center on body
+    billboard.StudsOffset = Vector3.new(0, 3.5, 0)
     billboard.AlwaysOnTop = true
     billboard.LightInfluence = 0
     billboard.Parent = LocalPlayer.PlayerGui
@@ -255,33 +183,14 @@ local function CreateESPForPlayer(player)
     local stroke = Instance.new("UIStroke")
     stroke.Color = Color3.fromRGB(0, 255, 0)
     stroke.Thickness = 2
-    stroke.Transparency = 0
     stroke.Parent = frame
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 2)
-    corner.Parent = frame
-
-    ESPObjects[player] = {
-        BillboardGui = billboard,
-        Frame = frame,
-        Adornee = head,
-    }
+    ESPObjects[player] = billboard
 end
 
-local function RemoveESPForPlayer(player)
-    local espData = ESPObjects[player]
-    if espData then
-        espData.BillboardGui:Destroy()
-        ESPObjects[player] = nil
-    end
-end
-
-local function RemoveAllESP()
-    for player, espData in pairs(ESPObjects) do
-        if espData.BillboardGui then
-            espData.BillboardGui:Destroy()
-        end
+local function RemoveESP(player)
+    if ESPObjects[player] then
+        ESPObjects[player]:Destroy()
         ESPObjects[player] = nil
     end
 end
@@ -289,97 +198,74 @@ end
 local function UpdateESP()
     if Settings.ESP then
         for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                CreateESPForPlayer(player)
-            end
+            if player ~= LocalPlayer then CreateESP(player) end
         end
     else
-        RemoveAllESP()
-    end
-end
-
--- Tracer Functions (using UI Frames instead of Drawing)
-local function CreateTracerForPlayer(player)
-    if TracerLines[player] then return end
-    local lineFrame = Instance.new("Frame")
-    lineFrame.Name = "Tracer_" .. player.Name
-    lineFrame.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    lineFrame.BorderSizePixel = 0
-    lineFrame.AnchorPoint = Vector2.new(0.5, 0)
-    lineFrame.Size = UDim2.new(0, 2, 0, 0) -- will be updated
-    lineFrame.Visible = false
-    lineFrame.ZIndex = 5
-    lineFrame.Parent = UI.ScreenGui
-    TracerLines[player] = lineFrame
-end
-
-local function RemoveTracerForPlayer(player)
-    local lineFrame = TracerLines[player]
-    if lineFrame then
-        lineFrame:Destroy()
-        TracerLines[player] = nil
-    end
-end
-
-local function RemoveAllTracers()
-    for player, lineFrame in pairs(TracerLines) do
-        if lineFrame then
-            lineFrame:Destroy()
+        for player, gui in pairs(ESPObjects) do
+            gui:Destroy()
+            ESPObjects[player] = nil
         end
-        TracerLines[player] = nil
+    end
+end
+
+-- Tracers (usando Frames)
+local function CreateTracer(player)
+    if TracerFrames[player] then return end
+    local line = Instance.new("Frame")
+    line.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    line.BorderSizePixel = 0
+    line.AnchorPoint = Vector2.new(0.5, 0)
+    line.Size = UDim2.new(0, 2, 0, 0)
+    line.Visible = false
+    line.ZIndex = 5
+    line.Parent = UI.ScreenGui
+    TracerFrames[player] = line
+end
+
+local function RemoveTracer(player)
+    if TracerFrames[player] then
+        TracerFrames[player]:Destroy()
+        TracerFrames[player] = nil
     end
 end
 
 local function UpdateTracers()
-    if Settings.Tracers then
-        local viewport = Camera.ViewportSize
-        local startX = viewport.X / 2
-        local startY = viewport.Y -- bottom center (adjust if needed)
-        for player, lineFrame in pairs(TracerLines) do
-            local character = GetCharacter(player)
-            if character and character:FindFirstChild("HumanoidRootPart") then
-                local rootPos = character.HumanoidRootPart.Position
-                local screenPos, onScreen = WorldToScreen(rootPos)
-                if onScreen then
-                    local delta = screenPos - Vector2.new(startX, startY)
-                    local length = delta.Magnitude
-                    if length > 0 then
-                        local angle = math.deg(math.atan2(delta.X, delta.Y)) -- angle from vertical down
-                        lineFrame.Size = UDim2.new(0, 2, 0, length)
-                        lineFrame.Position = UDim2.new(0, startX, 0, startY)
-                        lineFrame.Rotation = angle
-                        lineFrame.Visible = true
-                    else
-                        lineFrame.Visible = false
-                    end
+    if not Settings.Tracers then
+        for _, line in pairs(TracerFrames) do line.Visible = false end
+        return
+    end
+
+    local viewport = Camera.ViewportSize
+    local startX = viewport.X / 2
+    local startY = viewport.Y * 0.95 -- ligeiramente abaixo do centro
+
+    for player, line in pairs(TracerFrames) do
+        local char = GetCharacter(player)
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local rootPos = char.HumanoidRootPart.Position
+            local screenPos, onScreen = WorldToScreen(rootPos)
+            if onScreen then
+                local delta = screenPos - Vector2.new(startX, startY)
+                local length = delta.Magnitude
+                if length > 1 then
+                    local angle = math.deg(math.atan2(delta.X, delta.Y))
+                    line.Size = UDim2.new(0, 2, 0, length)
+                    line.Position = UDim2.new(0, startX, 0, startY)
+                    line.Rotation = angle
+                    line.Visible = true
                 else
-                    lineFrame.Visible = false
+                    line.Visible = false
                 end
             else
-                lineFrame.Visible = false
+                line.Visible = false
             end
-        end
-    else
-        -- Hide all lines
-        for _, lineFrame in pairs(TracerLines) do
-            if lineFrame then lineFrame.Visible = false end
+        else
+            line.Visible = false
         end
     end
 end
 
-local function UpdateAllTracers()
-    if Settings.Tracers then
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                CreateTracerForPlayer(player)
-            end
-        end
-    else
-        RemoveAllTracers()
-    end
-end
-
--- FOV Circle (using UI Frame)
+-- FOV Circle
 local function UpdateFOVCircle()
     if UI.FOVCircle then
         UI.FOVCircle.Size = UDim2.new(0, Settings.FOV * 2, 0, Settings.FOV * 2)
@@ -387,149 +273,135 @@ local function UpdateFOVCircle()
     end
 end
 
--- Aimbot Functions
+-- Aimbot
 local function GetClosestTarget()
-    local bestTarget = nil
-    local bestDistance = math.huge
-
-    local viewportCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local bestPlayer = nil
+    local bestDist = math.huge
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and IsTargetValid(player) then
-            local character = GetCharacter(player)
-            local targetPos = GetTargetPosition(character)
-            if targetPos then
-                local screenPos, onScreen = WorldToScreen(targetPos)
-                if onScreen then
-                    if IsInsideFOV(screenPos) then
-                        local dist = (screenPos - viewportCenter).Magnitude
-                        if dist < bestDistance then
-                            bestDistance = dist
-                            bestTarget = player
-                        end
+            local char = GetCharacter(player)
+            local pos = GetTargetPosition(char)
+            if pos then
+                local screenPos, onScreen = WorldToScreen(pos)
+                if onScreen and IsInsideFOV(screenPos) then
+                    local dist = (screenPos - center).Magnitude
+                    if dist < bestDist then
+                        bestDist = dist
+                        bestPlayer = player
                     end
                 end
             end
         end
     end
-
-    return bestTarget
+    return bestPlayer
 end
 
-local function AimAtTarget(targetPlayer)
-    if not targetPlayer then return end
-    local character = GetCharacter(targetPlayer)
-    if not character then return end
-    local targetPos = GetTargetPosition(character)
+local function AimAtTarget(target)
+    local char = GetCharacter(target)
+    if not char then return end
+    local targetPos = GetTargetPosition(char)
     if not targetPos then return end
 
-    local cameraCFrame = Camera.CFrame
-    local desiredCFrame = CFrame.lookAt(cameraCFrame.Position, targetPos)
-
-    -- Smoothness factor: higher = smoother (slower)
+    local camCF = Camera.CFrame
+    local desiredCF = CFrame.lookAt(camCF.Position, targetPos)
     local smoothFactor = 1 / Settings.Smoothness
-    smoothFactor = math.clamp(smoothFactor, 0.01, 1)
-
-    Camera.CFrame = cameraCFrame:Lerp(desiredCFrame, smoothFactor)
+    Camera.CFrame = camCF:Lerp(desiredCF, math.clamp(smoothFactor, 0.01, 1))
 end
 
 local function UpdateAimbot()
-    if Settings.Aimbot then
-        -- Determine target
-        if Settings.Aimlock and CurrentTarget and IsTargetValid(CurrentTarget) then
-            -- Keep current target if still valid and inside FOV
-            local character = GetCharacter(CurrentTarget)
-            if character then
-                local targetPos = GetTargetPosition(character)
-                if targetPos then
-                    local screenPos, onScreen = WorldToScreen(targetPos)
-                    if onScreen and IsInsideFOV(screenPos) then
-                        AimAtTarget(CurrentTarget)
-                        return
-                    end
-                end
-            end
-            -- Target no longer valid, clear
-            CurrentTarget = nil
-        end
-
-        -- Find new closest target
-        local newTarget = GetClosestTarget()
-        if newTarget then
-            CurrentTarget = newTarget
-            AimAtTarget(newTarget)
-            if newTarget ~= lastNotifiedTarget then
-                CreateNotification("Target: " .. newTarget.Name)
-                lastNotifiedTarget = newTarget
-            end
-        else
-            if CurrentTarget then
-                CreateNotification("Target Lost")
-                CurrentTarget = nil
-                lastNotifiedTarget = nil
-            end
-        end
-    else
+    if not Settings.Aimbot then
         CurrentTarget = nil
         lastNotifiedTarget = nil
+        return
+    end
+
+    if Settings.Aimlock and CurrentTarget and IsTargetValid(CurrentTarget) then
+        local char = GetCharacter(CurrentTarget)
+        if char then
+            local pos = GetTargetPosition(char)
+            if pos then
+                local screenPos, onScreen = WorldToScreen(pos)
+                if onScreen and IsInsideFOV(screenPos) then
+                    AimAtTarget(CurrentTarget)
+                    return
+                end
+            end
+        end
+        CurrentTarget = nil
+    end
+
+    local newTarget = GetClosestTarget()
+    if newTarget then
+        CurrentTarget = newTarget
+        AimAtTarget(newTarget)
+        if newTarget ~= lastNotifiedTarget then
+            CreateNotification("Target: " .. newTarget.Name)
+            lastNotifiedTarget = newTarget
+        end
+    else
+        if CurrentTarget then
+            CreateNotification("Target Lost")
+            CurrentTarget = nil
+            lastNotifiedTarget = nil
+        end
     end
 end
 
--- UI Creation
+-- UI Components
 local function CreateToggle(parent, label, callback)
-    local toggleFrame = Instance.new("Frame")
-    toggleFrame.Size = UDim2.new(1, 0, 0, 30)
-    toggleFrame.BackgroundTransparency = 1
-    toggleFrame.Parent = parent
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 30)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
 
-    local labelObj = Instance.new("TextLabel")
-    labelObj.Size = UDim2.new(0.6, 0, 1, 0)
-    labelObj.Position = UDim2.new(0, 0, 0, 0)
-    labelObj.BackgroundTransparency = 1
-    labelObj.Text = label
-    labelObj.Font = Enum.Font.GothamBold
-    labelObj.TextSize = 14
-    labelObj.TextColor3 = Color3.fromRGB(255, 255, 255)
-    labelObj.TextXAlignment = Enum.TextXAlignment.Left
-    labelObj.Parent = toggleFrame
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.6, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 14
+    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = frame
 
-    local toggleButton = Instance.new("TextButton")
-    toggleButton.Size = UDim2.new(0, 44, 0, 22)
-    toggleButton.Position = UDim2.new(1, -44, 0.5, -11)
-    toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    toggleButton.BorderSizePixel = 0
-    toggleButton.Text = ""
-    toggleButton.AutoButtonColor = false
-    toggleButton.Parent = toggleFrame
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(0, 44, 0, 22)
+    button.Position = UDim2.new(1, -44, 0.5, -11)
+    button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    button.BorderSizePixel = 0
+    button.Text = ""
+    button.AutoButtonColor = false
+    button.Parent = frame
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(1, 0)
-    corner.Parent = toggleButton
+    corner.Parent = button
 
     local knob = Instance.new("Frame")
     knob.Size = UDim2.new(0, 18, 0, 18)
     knob.Position = UDim2.new(0, 2, 0.5, -9)
     knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     knob.BorderSizePixel = 0
-    knob.Parent = toggleButton
+    knob.Parent = button
 
     local knobCorner = Instance.new("UICorner")
     knobCorner.CornerRadius = UDim.new(1, 0)
     knobCorner.Parent = knob
 
     local state = false
-
     local function UpdateVisual()
         if state then
-            toggleButton.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+            button.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
             knob.Position = UDim2.new(1, -20, 0.5, -9)
         else
-            toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
             knob.Position = UDim2.new(0, 2, 0.5, -9)
         end
     end
 
-    toggleButton.MouseButton1Click:Connect(function()
+    button.MouseButton1Click:Connect(function()
         state = not state
         UpdateVisual()
         if callback then callback(state) end
@@ -543,250 +415,229 @@ local function CreateToggle(parent, label, callback)
     end
 end
 
-local function CreateSlider(parent, label, minVal, maxVal, default, callback)
-    local sliderFrame = Instance.new("Frame")
-    sliderFrame.Size = UDim2.new(1, 0, 0, 40)
-    sliderFrame.BackgroundTransparency = 1
-    sliderFrame.Parent = parent
+local function CreateSlider(parent, label, min, max, default, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 40)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
 
-    local labelObj = Instance.new("TextLabel")
-    labelObj.Size = UDim2.new(0.4, 0, 1, 0)
-    labelObj.Position = UDim2.new(0, 0, 0, 0)
-    labelObj.BackgroundTransparency = 1
-    labelObj.Text = label
-    labelObj.Font = Enum.Font.GothamBold
-    labelObj.TextSize = 14
-    labelObj.TextColor3 = Color3.fromRGB(255, 255, 255)
-    labelObj.TextXAlignment = Enum.TextXAlignment.Left
-    labelObj.Parent = sliderFrame
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.4, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 14
+    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = frame
 
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Size = UDim2.new(0.2, 0, 1, 0)
-    valueLabel.Position = UDim2.new(0.4, 0, 0, 0)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Text = tostring(default)
-    valueLabel.Font = Enum.Font.GothamBold
-    valueLabel.TextSize = 14
-    valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-    valueLabel.Parent = sliderFrame
+    local valLbl = Instance.new("TextLabel")
+    valLbl.Size = UDim2.new(0.2, 0, 1, 0)
+    valLbl.Position = UDim2.new(0.4, 0, 0, 0)
+    valLbl.BackgroundTransparency = 1
+    valLbl.Text = tostring(default)
+    valLbl.Font = Enum.Font.GothamBold
+    valLbl.TextSize = 14
+    valLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    valLbl.TextXAlignment = Enum.TextXAlignment.Right
+    valLbl.Parent = frame
 
-    local sliderBG = Instance.new("Frame")
-    sliderBG.Size = UDim2.new(1, 0, 0, 6)
-    sliderBG.Position = UDim2.new(0, 0, 0.7, -3)
-    sliderBG.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    sliderBG.BorderSizePixel = 0
-    sliderBG.Parent = sliderFrame
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 0, 6)
+    bg.Position = UDim2.new(0, 0, 0.7, -3)
+    bg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    bg.BorderSizePixel = 0
+    bg.Parent = frame
 
-    local sliderCorner = Instance.new("UICorner")
-    sliderCorner.CornerRadius = UDim.new(1, 0)
-    sliderCorner.Parent = sliderBG
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(1, 0)
+    bgCorner.Parent = bg
 
-    local sliderFill = Instance.new("Frame")
-    sliderFill.Size = UDim2.new((default - minVal) / (maxVal - minVal), 0, 1, 0)
-    sliderFill.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-    sliderFill.BorderSizePixel = 0
-    sliderFill.Parent = sliderBG
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+    fill.BorderSizePixel = 0
+    fill.Parent = bg
 
     local fillCorner = Instance.new("UICorner")
     fillCorner.CornerRadius = UDim.new(1, 0)
-    fillCorner.Parent = sliderFill
+    fillCorner.Parent = fill
 
     local handle = Instance.new("Frame")
     handle.Size = UDim2.new(0, 14, 0, 14)
-    handle.Position = UDim2.new((default - minVal) / (maxVal - minVal), -7, 0.5, -7)
+    handle.Position = UDim2.new((default - min) / (max - min), -7, 0.5, -7)
     handle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     handle.BorderSizePixel = 0
-    handle.Parent = sliderBG
+    handle.Parent = bg
 
     local handleCorner = Instance.new("UICorner")
     handleCorner.CornerRadius = UDim.new(1, 0)
     handleCorner.Parent = handle
 
     local dragging = false
-
     local function UpdateFromMouse(x)
-        local relX = math.clamp(x - sliderBG.AbsolutePosition.X, 0, sliderBG.AbsoluteSize.X)
-        local t = relX / sliderBG.AbsoluteSize.X
-        local val = minVal + t * (maxVal - minVal)
-        val = math.floor(val + 0.5)
-        val = math.clamp(val, minVal, maxVal)
-        valueLabel.Text = tostring(val)
-        sliderFill.Size = UDim2.new(t, 0, 1, 0)
+        local relX = math.clamp(x - bg.AbsolutePosition.X, 0, bg.AbsoluteSize.X)
+        local t = relX / bg.AbsoluteSize.X
+        local val = math.floor(min + t * (max - min) + 0.5)
+        val = math.clamp(val, min, max)
+        valLbl.Text = tostring(val)
+        fill.Size = UDim2.new(t, 0, 1, 0)
         handle.Position = UDim2.new(t, -7, 0.5, -7)
         if callback then callback(val) end
     end
 
-    local function onInput(input)
+    bg.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
             UpdateFromMouse(input.Position.X)
-        elseif input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+        end
+    end)
+    bg.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             UpdateFromMouse(input.Position.X)
-        elseif input.UserInputType == Enum.UserInputType.MouseButton1 and not input.UserInputState then
-            dragging = false
         end
-    end
-
-    sliderBG.InputBegan:Connect(onInput)
-    sliderBG.InputChanged:Connect(onInput)
+    end)
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
     end)
 
     return function(newVal)
-        newVal = math.clamp(newVal, minVal, maxVal)
-        valueLabel.Text = tostring(newVal)
-        local t = (newVal - minVal) / (maxVal - minVal)
-        sliderFill.Size = UDim2.new(t, 0, 1, 0)
+        newVal = math.clamp(newVal, min, max)
+        valLbl.Text = tostring(newVal)
+        local t = (newVal - min) / (max - min)
+        fill.Size = UDim2.new(t, 0, 1, 0)
         handle.Position = UDim2.new(t, -7, 0.5, -7)
     end
 end
 
 local function CreateDropdown(parent, label, options, default, callback)
-    local dropdownFrame = Instance.new("Frame")
-    dropdownFrame.Size = UDim2.new(1, 0, 0, 40)
-    dropdownFrame.BackgroundTransparency = 1
-    dropdownFrame.Parent = parent
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, 0, 0, 40)
+    frame.BackgroundTransparency = 1
+    frame.Parent = parent
 
-    local labelObj = Instance.new("TextLabel")
-    labelObj.Size = UDim2.new(0.4, 0, 1, 0)
-    labelObj.Position = UDim2.new(0, 0, 0, 0)
-    labelObj.BackgroundTransparency = 1
-    labelObj.Text = label
-    labelObj.Font = Enum.Font.GothamBold
-    labelObj.TextSize = 14
-    labelObj.TextColor3 = Color3.fromRGB(255, 255, 255)
-    labelObj.TextXAlignment = Enum.TextXAlignment.Left
-    labelObj.Parent = dropdownFrame
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.4, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = label
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 14
+    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = frame
 
-    local dropdownButton = Instance.new("TextButton")
-    dropdownButton.Size = UDim2.new(0.6, 0, 0, 30)
-    dropdownButton.Position = UDim2.new(0.4, 0, 0.5, -15)
-    dropdownButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    dropdownButton.BorderSizePixel = 0
-    dropdownButton.Text = default
-    dropdownButton.Font = Enum.Font.GothamBold
-    dropdownButton.TextSize = 14
-    dropdownButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    dropdownButton.AutoButtonColor = false
-    dropdownButton.Parent = dropdownFrame
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.6, 0, 0, 30)
+    btn.Position = UDim2.new(0.4, 0, 0.5, -15)
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    btn.BorderSizePixel = 0
+    btn.Text = default
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.AutoButtonColor = false
+    btn.Parent = frame
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = dropdownButton
+    corner.Parent = btn
 
     local list = nil
     local isOpen = false
 
     local function CloseList()
-        if list then
-            list:Destroy()
-            list = nil
-        end
+        if list then list:Destroy(); list = nil end
         isOpen = false
     end
 
     local function OpenList()
         if isOpen then CloseList() return end
         isOpen = true
-
         list = Instance.new("Frame")
         list.Size = UDim2.new(0.6, 0, 0, #options * 30)
         list.Position = UDim2.new(0.4, 0, 0.5, 15)
         list.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
         list.BorderSizePixel = 0
         list.ZIndex = 10
-        list.Parent = dropdownFrame
+        list.Parent = frame
 
         local listCorner = Instance.new("UICorner")
         listCorner.CornerRadius = UDim.new(0, 6)
         listCorner.Parent = list
 
         for i, option in ipairs(options) do
-            local optionButton = Instance.new("TextButton")
-            optionButton.Size = UDim2.new(1, 0, 0, 30)
-            optionButton.Position = UDim2.new(0, 0, 0, (i-1)*30)
-            optionButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-            optionButton.BorderSizePixel = 0
-            optionButton.Text = option
-            optionButton.Font = Enum.Font.GothamBold
-            optionButton.TextSize = 14
-            optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-            optionButton.AutoButtonColor = false
-            optionButton.Parent = list
+            local optBtn = Instance.new("TextButton")
+            optBtn.Size = UDim2.new(1, 0, 0, 30)
+            optBtn.Position = UDim2.new(0, 0, 0, (i-1)*30)
+            optBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+            optBtn.BorderSizePixel = 0
+            optBtn.Text = option
+            optBtn.Font = Enum.Font.GothamBold
+            optBtn.TextSize = 14
+            optBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            optBtn.AutoButtonColor = false
+            optBtn.Parent = list
 
             local optCorner = Instance.new("UICorner")
             optCorner.CornerRadius = UDim.new(0, 4)
-            optCorner.Parent = optionButton
+            optCorner.Parent = optBtn
 
-            optionButton.MouseButton1Click:Connect(function()
-                dropdownButton.Text = option
+            optBtn.MouseButton1Click:Connect(function()
+                btn.Text = option
                 CloseList()
                 if callback then callback(option) end
             end)
 
-            optionButton.MouseEnter:Connect(function()
-                optionButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-            end)
-            optionButton.MouseLeave:Connect(function()
-                optionButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-            end)
+            optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = Color3.fromRGB(70,70,70) end)
+            optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = Color3.fromRGB(50,50,50) end)
         end
     end
 
-    dropdownButton.MouseButton1Click:Connect(OpenList)
+    btn.MouseButton1Click:Connect(OpenList)
 
     UserInputService.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and isOpen then
             local pos = UserInputService:GetMouseLocation()
-            local inButton = pos.X >= dropdownButton.AbsolutePosition.X and pos.X <= dropdownButton.AbsolutePosition.X + dropdownButton.AbsoluteSize.X
-                and pos.Y >= dropdownButton.AbsolutePosition.Y and pos.Y <= dropdownButton.AbsolutePosition.Y + dropdownButton.AbsoluteSize.Y
+            local inBtn = pos.X >= btn.AbsolutePosition.X and pos.X <= btn.AbsolutePosition.X + btn.AbsoluteSize.X
+                and pos.Y >= btn.AbsolutePosition.Y and pos.Y <= btn.AbsolutePosition.Y + btn.AbsoluteSize.Y
             local inList = list and (pos.X >= list.AbsolutePosition.X and pos.X <= list.AbsolutePosition.X + list.AbsoluteSize.X
                 and pos.Y >= list.AbsolutePosition.Y and pos.Y <= list.AbsolutePosition.Y + list.AbsoluteSize.Y)
-            if not inButton and not inList then
-                CloseList()
-            end
+            if not inBtn and not inList then CloseList() end
         end
     end)
 
-    return function(newValue)
-        dropdownButton.Text = newValue
-    end
+    return function(newValue) btn.Text = newValue end
 end
 
--- Main UI creation
+-- UI Principal
 local function CreateUI()
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "VenyCombatPanel"
     screenGui.ResetOnSpawn = false
     screenGui.Parent = LocalPlayer.PlayerGui
+    UI.ScreenGui = screenGui
 
-    -- Shadow frame
+    -- Sombra
     local shadow = Instance.new("Frame")
     shadow.Size = UDim2.new(0, 320, 0, 520)
     shadow.Position = UDim2.new(0.5, -160, 0.5, -260)
     shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     shadow.BackgroundTransparency = 0.5
     shadow.BorderSizePixel = 0
-    shadow.ZIndex = 0
     shadow.Parent = screenGui
 
     local shadowCorner = Instance.new("UICorner")
     shadowCorner.CornerRadius = UDim.new(0, 12)
     shadowCorner.Parent = shadow
 
-    -- Main panel
+    -- Painel principal
     local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "MainFrame"
     mainFrame.Size = UDim2.new(0, 310, 0, 510)
     mainFrame.Position = UDim2.new(0.5, -155, 0.5, -255)
     mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     mainFrame.BorderSizePixel = 0
-    mainFrame.ZIndex = 1
     mainFrame.Parent = screenGui
+    UI.MainFrame = mainFrame
 
     local mainCorner = Instance.new("UICorner")
     mainCorner.CornerRadius = UDim.new(0, 12)
@@ -798,21 +649,17 @@ local function CreateUI()
     mainStroke.Transparency = 0.5
     mainStroke.Parent = mainFrame
 
-    -- Header
+    -- Cabeçalho
     local header = Instance.new("Frame")
-    header.Name = "Header"
     header.Size = UDim2.new(1, 0, 0, 40)
-    header.Position = UDim2.new(0, 0, 0, 0)
     header.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
     header.BorderSizePixel = 0
-    header.ZIndex = 2
     header.Parent = mainFrame
 
     local headerCorner = Instance.new("UICorner")
     headerCorner.CornerRadius = UDim.new(0, 12)
     headerCorner.Parent = header
 
-    -- Title
     local title = Instance.new("TextLabel")
     title.Size = UDim2.new(0.6, 0, 1, 0)
     title.Position = UDim2.new(0, 10, 0, 0)
@@ -824,7 +671,7 @@ local function CreateUI()
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = header
 
-    -- Minimize button
+    -- Botão minimizar
     local minimizeBtn = Instance.new("TextButton")
     minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
     minimizeBtn.Position = UDim2.new(1, -70, 0.5, -15)
@@ -841,7 +688,7 @@ local function CreateUI()
     minCorner.CornerRadius = UDim.new(0, 6)
     minCorner.Parent = minimizeBtn
 
-    -- Close button
+    -- Botão fechar
     local closeBtn = Instance.new("TextButton")
     closeBtn.Size = UDim2.new(0, 30, 0, 30)
     closeBtn.Position = UDim2.new(1, -35, 0.5, -15)
@@ -858,9 +705,8 @@ local function CreateUI()
     closeCorner.CornerRadius = UDim.new(0, 6)
     closeCorner.Parent = closeBtn
 
-    -- Content area (Scrollable)
+    -- Área de conteúdo
     local content = Instance.new("ScrollingFrame")
-    content.Name = "Content"
     content.Size = UDim2.new(1, 0, 1, -40)
     content.Position = UDim2.new(0, 0, 0, 40)
     content.BackgroundTransparency = 1
@@ -871,49 +717,41 @@ local function CreateUI()
     content.AutomaticCanvasSize = Enum.AutomaticSize.Y
     content.Parent = mainFrame
 
-    local uiLayout = Instance.new("UIListLayout")
-    uiLayout.Padding = UDim.new(0, 5)
-    uiLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    uiLayout.Parent = content
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 5)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Parent = content
 
-    -- Notification container
+    -- Container de notificações
     NotificationContainer = Instance.new("Frame")
     NotificationContainer.Size = UDim2.new(1, 0, 1, 0)
     NotificationContainer.BackgroundTransparency = 1
     NotificationContainer.ZIndex = 100
     NotificationContainer.Parent = screenGui
 
-    -- Store important UI elements
-    UI.ScreenGui = screenGui
-    UI.MainFrame = mainFrame
-    UI.Header = header
-    UI.Content = content
-
-    -- FOV Circle (UI Frame)
-    local fovCircleFrame = Instance.new("Frame")
-    fovCircleFrame.Name = "FOVCircle"
-    fovCircleFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    fovCircleFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    fovCircleFrame.Size = UDim2.new(0, Settings.FOV * 2, 0, Settings.FOV * 2)
-    fovCircleFrame.BackgroundTransparency = 1
-    fovCircleFrame.BorderSizePixel = 0
-    fovCircleFrame.ZIndex = 3
-    fovCircleFrame.Visible = Settings.ShowFOV
-    fovCircleFrame.Parent = screenGui
+    -- Círculo FOV
+    local fovCircle = Instance.new("Frame")
+    fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+    fovCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
+    fovCircle.Size = UDim2.new(0, Settings.FOV * 2, 0, Settings.FOV * 2)
+    fovCircle.BackgroundTransparency = 1
+    fovCircle.BorderSizePixel = 0
+    fovCircle.ZIndex = 3
+    fovCircle.Visible = Settings.ShowFOV
+    fovCircle.Parent = screenGui
+    UI.FOVCircle = fovCircle
 
     local fovCorner = Instance.new("UICorner")
     fovCorner.CornerRadius = UDim.new(1, 0)
-    fovCorner.Parent = fovCircleFrame
+    fovCorner.Parent = fovCircle
 
     local fovStroke = Instance.new("UIStroke")
     fovStroke.Color = Color3.fromRGB(255, 255, 255)
     fovStroke.Thickness = 2
     fovStroke.Transparency = 0.7
-    fovStroke.Parent = fovCircleFrame
+    fovStroke.Parent = fovCircle
 
-    UI.FOVCircle = fovCircleFrame
-
-    -- Dragging functionality
+    -- Arrastar painel
     local dragging = false
     local dragStart = nil
     local startPos = nil
@@ -935,34 +773,25 @@ local function CreateUI()
     end)
 
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = false
-        end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
     end)
 
-    -- Minimize
+    -- Minimizar
     local isMinimized = false
     minimizeBtn.MouseButton1Click:Connect(function()
         isMinimized = not isMinimized
-        if isMinimized then
-            content.Visible = false
-            mainFrame.Size = UDim2.new(0, 310, 0, 40)
-            shadow.Size = UDim2.new(0, 320, 0, 50)
-        else
-            content.Visible = true
-            mainFrame.Size = UDim2.new(0, 310, 0, 510)
-            shadow.Size = UDim2.new(0, 320, 0, 520)
-        end
+        content.Visible = not isMinimized
+        mainFrame.Size = isMinimized and UDim2.new(0, 310, 0, 40) or UDim2.new(0, 310, 0, 510)
+        shadow.Size = isMinimized and UDim2.new(0, 320, 0, 50) or UDim2.new(0, 320, 0, 520)
     end)
 
-    -- Close
+    -- Fechar
     closeBtn.MouseButton1Click:Connect(function()
         Cleanup()
         screenGui:Destroy()
     end)
 
-    -- Build sections
-    -- Visuals section
+    -- Seções
     local visualsSection = Instance.new("Frame")
     visualsSection.Size = UDim2.new(1, 0, 0, 100)
     visualsSection.BackgroundTransparency = 1
@@ -996,15 +825,17 @@ local function CreateUI()
         Settings.Tracers = state
         if state then
             CreateNotification("Tracers Enabled")
-            UpdateAllTracers()
+            -- Garantir que existam tracers para todos os jogadores
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then CreateTracer(p) end
+            end
         else
             CreateNotification("Tracers Disabled")
-            RemoveAllTracers()
         end
     end)
     tracerSetState(Settings.Tracers)
 
-    -- Aim section
+    -- Seção AIM
     local aimSection = Instance.new("Frame")
     aimSection.Size = UDim2.new(1, 0, 0, 400)
     aimSection.BackgroundTransparency = 1
@@ -1020,7 +851,7 @@ local function CreateUI()
     aimTitle.TextXAlignment = Enum.TextXAlignment.Left
     aimTitle.Parent = aimSection
 
-    -- Aimbot Toggle
+    -- Aimbot
     local aimbotSetState = CreateToggle(aimSection, "Aimbot", function(state)
         Settings.Aimbot = state
         if state then
@@ -1033,14 +864,10 @@ local function CreateUI()
     end)
     aimbotSetState(Settings.Aimbot)
 
-    -- Aimlock Toggle
+    -- Aimlock
     local aimlockSetState = CreateToggle(aimSection, "Aimlock", function(state)
         Settings.Aimlock = state
-        if state then
-            CreateNotification("Aimlock Enabled")
-        else
-            CreateNotification("Aimlock Disabled")
-        end
+        if state then CreateNotification("Aimlock Enabled") else CreateNotification("Aimlock Disabled") end
     end)
     aimlockSetState(Settings.Aimlock)
 
@@ -1092,31 +919,25 @@ local function CreateUI()
     return screenGui
 end
 
--- Main initialization
+-- Inicialização
 local function Init()
     local screenGui = CreateUI()
 
-    -- Initial ESP/Tracers update
     UpdateESP()
-    UpdateAllTracers()
     UpdateFOVCircle()
 
-    -- Player added
-    local function OnPlayerAdded(player)
+    -- Conectar eventos de jogadores
+    local function onPlayerAdded(player)
         if player ~= LocalPlayer then
-            if Settings.ESP then
-                CreateESPForPlayer(player)
-            end
-            if Settings.Tracers then
-                CreateTracerForPlayer(player)
-            end
+            if Settings.ESP then CreateESP(player) end
+            if Settings.Tracers then CreateTracer(player) end
         end
     end
 
-    local function OnPlayerRemoving(player)
+    local function onPlayerRemoving(player)
         if player ~= LocalPlayer then
-            RemoveESPForPlayer(player)
-            RemoveTracerForPlayer(player)
+            RemoveESP(player)
+            RemoveTracer(player)
             if CurrentTarget == player then
                 CurrentTarget = nil
                 lastNotifiedTarget = nil
@@ -1124,57 +945,62 @@ local function Init()
         end
     end
 
-    for _, player in ipairs(Players:GetPlayers()) do
-        OnPlayerAdded(player)
-    end
+    for _, p in ipairs(Players:GetPlayers()) do onPlayerAdded(p) end
 
-    Connections[#Connections + 1] = Players.PlayerAdded:Connect(OnPlayerAdded)
-    Connections[#Connections + 1] = Players.PlayerRemoving:Connect(OnPlayerRemoving)
+    Connections[#Connections + 1] = Players.PlayerAdded:Connect(onPlayerAdded)
+    Connections[#Connections + 1] = Players.PlayerRemoving:Connect(onPlayerRemoving)
 
-    -- Character added (respawn)
-    local function OnCharacterAdded(player, character)
+    -- Respawn
+    local function onCharacterAdded(player, character)
         if player ~= LocalPlayer then
             if Settings.ESP then
-                RemoveESPForPlayer(player)
+                RemoveESP(player)
                 task.wait(0.1)
-                CreateESPForPlayer(player)
+                CreateESP(player)
             end
-            if Settings.Tracers then
-                CreateTracerForPlayer(player)
-            end
+            -- Tracers não precisam ser recriados, apenas atualizados
         end
     end
 
     Connections[#Connections + 1] = Players.PlayerAdded:Connect(function(player)
-        player.CharacterAdded:Connect(function(character)
-            OnCharacterAdded(player, character)
-        end)
+        player.CharacterAdded:Connect(function(char) onCharacterAdded(player, char) end)
     end)
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            Connections[#Connections + 1] = player.CharacterAdded:Connect(function(character)
-                OnCharacterAdded(player, character)
-            end)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            Connections[#Connections + 1] = p.CharacterAdded:Connect(function(char) onCharacterAdded(p, char) end)
         end
     end
 
-    -- RenderStepped for continuous updates
-    local renderConnection
-    renderConnection = RunService.RenderStepped:Connect(function(dt)
+    -- RenderStepped
+    local renderConn
+    renderConn = RunService.RenderStepped:Connect(function()
         UpdateTracers()
         UpdateFOVCircle()
         UpdateAimbot()
     end)
-    Connections[#Connections + 1] = renderConnection
+    Connections[#Connections + 1] = renderConn
 
-    -- Cleanup on script destruction
     screenGui.Destroying:Connect(function()
         Cleanup()
-        for _, conn in ipairs(Connections) do
-            conn:Disconnect()
-        end
     end)
 end
 
+function Cleanup()
+    for _, conn in ipairs(Connections) do
+        if typeof(conn) == "RBXScriptConnection" then conn:Disconnect() end
+    end
+    Connections = {}
+
+    for _, gui in pairs(ESPObjects) do gui:Destroy() end
+    ESPObjects = {}
+
+    for _, line in pairs(TracerFrames) do line:Destroy() end
+    TracerFrames = {}
+
+    if UI.FOVCircle then UI.FOVCircle:Destroy(); UI.FOVCircle = nil end
+    CurrentTarget = nil
+    lastNotifiedTarget = nil
+end
+
+-- Executar
 Init()
