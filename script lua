@@ -1,5 +1,5 @@
--- Veny Panel - Versão Glass Profissional (CORRIGIDA)
--- Sem usar assets externos que podem falhar
+-- Veny Panel - Versão Ultra Profissional
+-- Com botão de abrir e painel central
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -26,6 +26,7 @@ local ESP_Highlights = {}
 local FlyBody = nil
 local FlyGyro = nil
 local CurrentPath = 1
+local PanelOpen = false
 
 -- Notificações Customizadas
 local function Notify(title, message, duration)
@@ -42,10 +43,10 @@ local function Notify(title, message, duration)
         local Notification = Instance.new("Frame")
         Notification.Name = "Notification"
         Notification.Parent = ScreenGui
-        Notification.Size = UDim2.new(0, 280, 0, 60)
-        Notification.Position = UDim2.new(1, -290, 0, -70)
-        Notification.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-        Notification.BackgroundTransparency = 0.1
+        Notification.Size = UDim2.new(0, 300, 0, 60)
+        Notification.Position = UDim2.new(1, -310, 0, -70)
+        Notification.BackgroundColor3 = Color3.new(0.05, 0.05, 0.05)
+        Notification.BackgroundTransparency = 0.05
         Notification.BorderSizePixel = 0
         
         local Corner = Instance.new("UICorner")
@@ -53,10 +54,19 @@ local function Notify(title, message, duration)
         Corner.Parent = Notification
         
         local Stroke = Instance.new("UIStroke")
-        Stroke.Color = Color3.new(1, 1, 1)
-        Stroke.Transparency = 0.5
-        Stroke.Thickness = 1
+        Stroke.Color = Color3.new(0.3, 0.8, 1)
+        Stroke.Transparency = 0.3
+        Stroke.Thickness = 1.5
         Stroke.Parent = Notification
+        
+        -- Gradiente de fundo
+        local Gradient = Instance.new("UIGradient")
+        Gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.new(0.1, 0.1, 0.1)),
+            ColorSequenceKeypoint.new(1, Color3.new(0.05, 0.05, 0.05))
+        })
+        Gradient.Rotation = 45
+        Gradient.Parent = Notification
         
         local Icon = Instance.new("TextLabel")
         Icon.Parent = Notification
@@ -66,7 +76,7 @@ local function Notify(title, message, duration)
         Icon.Text = "✔"
         Icon.Font = Enum.Font.GothamBold
         Icon.TextSize = 20
-        Icon.TextColor3 = Color3.new(0, 1, 0)
+        Icon.TextColor3 = Color3.new(0.3, 1, 0.5)
         
         local TitleLabel = Instance.new("TextLabel")
         TitleLabel.Parent = Notification
@@ -87,7 +97,7 @@ local function Notify(title, message, duration)
         MessageLabel.Text = message
         MessageLabel.Font = Enum.Font.Gotham
         MessageLabel.TextSize = 12
-        MessageLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+        MessageLabel.TextColor3 = Color3.new(0.7, 0.7, 0.7)
         MessageLabel.TextXAlignment = Enum.TextXAlignment.Left
         
         -- Empurrar notificações existentes
@@ -103,16 +113,16 @@ local function Notify(title, message, duration)
         -- Animação de entrada
         Notification.Transparency = 1
         
-        TweenService:Create(Notification, TweenInfo.new(0.5), {
-            Position = UDim2.new(1, -290, 1, -70),
+        TweenService:Create(Notification, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {
+            Position = UDim2.new(1, -310, 1, -70),
             Transparency = 0
         }):Play()
         
         -- Remover após duration
         task.delay(duration, function()
             pcall(function()
-                TweenService:Create(Notification, TweenInfo.new(0.5), {
-                    Position = UDim2.new(1, -290, 1, 10),
+                TweenService:Create(Notification, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {
+                    Position = UDim2.new(1, -310, 1, 10),
                     Transparency = 1
                 }):Play()
                 
@@ -283,133 +293,222 @@ local function PrevPath()
     TeleportToPath(CurrentPath)
 end
 
--- Criar UI Glass Profissional
+-- Criar UI Ultra Profissional
 local function CreateUI()
     local ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "VenyPanel"
     ScreenGui.Parent = game:GetService("CoreGui")
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
-    -- Container principal
+    -- Botão para abrir/fechar
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Name = "ToggleButton"
+    ToggleButton.Parent = ScreenGui
+    ToggleButton.Size = UDim2.new(0, 120, 0, 40)
+    ToggleButton.Position = UDim2.new(0.5, -60, 0, 10)
+    ToggleButton.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    ToggleButton.BackgroundTransparency = 0.1
+    ToggleButton.BorderSizePixel = 0
+    ToggleButton.Text = "VENY PANEL"
+    ToggleButton.Font = Enum.Font.GothamBlack
+    ToggleButton.TextSize = 16
+    ToggleButton.TextColor3 = Color3.new(1, 1, 1)
+    ToggleButton.AutoButtonColor = false
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 12)
+    ToggleCorner.Parent = ToggleButton
+    
+    local ToggleStroke = Instance.new("UIStroke")
+    ToggleStroke.Color = Color3.new(0.3, 0.8, 1)
+    ToggleStroke.Transparency = 0.3
+    ToggleStroke.Thickness = 2
+    ToggleStroke.Parent = ToggleButton
+    
+    -- Gradiente do botão
+    local ToggleGradient = Instance.new("UIGradient")
+    ToggleGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(0.2, 0.6, 1)),
+        ColorSequenceKeypoint.new(1, Color3.new(0.4, 0.3, 1))
+    })
+    ToggleGradient.Rotation = 45
+    ToggleGradient.Parent = ToggleButton
+    
+    -- Efeito hover no botão
+    ToggleButton.MouseEnter:Connect(function()
+        TweenService:Create(ToggleButton, TweenInfo.new(0.3), {
+            Size = UDim2.new(0, 130, 0, 45)
+        }):Play()
+    end)
+    
+    ToggleButton.MouseLeave:Connect(function()
+        TweenService:Create(ToggleButton, TweenInfo.new(0.3), {
+            Size = UDim2.new(0, 120, 0, 40)
+        }):Play()
+    end)
+    
+    -- Container principal (Centralizado)
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.Parent = ScreenGui
-    MainFrame.Size = UDim2.new(0, 300, 0, 450)
-    MainFrame.Position = UDim2.new(1, -310, 0.5, -225)
-    MainFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-    MainFrame.BackgroundTransparency = 0.15
+    MainFrame.Size = UDim2.new(0, 350, 0, 500)
+    MainFrame.Position = UDim2.new(0.5, -175, 0.5, -250)
+    MainFrame.BackgroundColor3 = Color3.new(0.08, 0.08, 0.08)
+    MainFrame.BackgroundTransparency = 0.05
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
     MainFrame.Draggable = true
+    MainFrame.Visible = false
     
     local MainCorner = Instance.new("UICorner")
-    MainCorner.CornerRadius = UDim.new(0, 16)
+    MainCorner.CornerRadius = UDim.new(0, 20)
     MainCorner.Parent = MainFrame
     
     local MainStroke = Instance.new("UIStroke")
-    MainStroke.Color = Color3.new(1, 1, 1)
-    MainStroke.Transparency = 0.3
-    MainStroke.Thickness = 1.5
+    MainStroke.Color = Color3.new(0.3, 0.8, 1)
+    MainStroke.Transparency = 0.2
+    MainStroke.Thickness = 2
     MainStroke.Parent = MainFrame
+    
+    -- Gradiente do frame principal
+    local MainGradient = Instance.new("UIGradient")
+    MainGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.new(0.1, 0.1, 0.15)),
+        ColorSequenceKeypoint.new(0.5, Color3.new(0.05, 0.05, 0.08)),
+        ColorSequenceKeypoint.new(1, Color3.new(0.1, 0.1, 0.15))
+    })
+    MainGradient.Rotation = 90
+    MainGradient.Parent = MainFrame
     
     -- Título
     local TitleLabel = Instance.new("TextLabel")
     TitleLabel.Parent = MainFrame
-    TitleLabel.Size = UDim2.new(1, -50, 0, 40)
-    TitleLabel.Position = UDim2.new(0, 20, 0, 0)
+    TitleLabel.Size = UDim2.new(1, -50, 0, 50)
+    TitleLabel.Position = UDim2.new(0, 25, 0, 0)
     TitleLabel.BackgroundTransparency = 1
-    TitleLabel.Text = "VENY PANEL"
+    TitleLabel.Text = "⚡ VENY PANEL ⚡"
     TitleLabel.Font = Enum.Font.GothamBlack
-    TitleLabel.TextSize = 18
+    TitleLabel.TextSize = 22
     TitleLabel.TextColor3 = Color3.new(1, 1, 1)
     TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     
     -- Botão fechar
     local CloseButton = Instance.new("TextButton")
     CloseButton.Parent = MainFrame
-    CloseButton.Size = UDim2.new(0, 30, 0, 30)
-    CloseButton.Position = UDim2.new(1, -35, 0, 5)
+    CloseButton.Size = UDim2.new(0, 35, 0, 35)
+    CloseButton.Position = UDim2.new(1, -45, 0, 8)
     CloseButton.BackgroundColor3 = Color3.new(1, 0, 0)
-    CloseButton.BackgroundTransparency = 0.3
+    CloseButton.BackgroundTransparency = 0.2
     CloseButton.BorderSizePixel = 0
     CloseButton.Text = "✕"
     CloseButton.Font = Enum.Font.GothamBold
-    CloseButton.TextSize = 16
+    CloseButton.TextSize = 18
     CloseButton.TextColor3 = Color3.new(1, 1, 1)
+    CloseButton.AutoButtonColor = false
     
     local CloseCorner = Instance.new("UICorner")
-    CloseCorner.CornerRadius = UDim.new(0, 8)
+    CloseCorner.CornerRadius = UDim.new(0, 10)
     CloseCorner.Parent = CloseButton
     
+    CloseButton.MouseEnter:Connect(function()
+        TweenService:Create(CloseButton, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0
+        }):Play()
+    end)
+    
+    CloseButton.MouseLeave:Connect(function()
+        TweenService:Create(CloseButton, TweenInfo.new(0.2), {
+            BackgroundTransparency = 0.2
+        }):Play()
+    end)
+    
     CloseButton.MouseButton1Click:Connect(function()
-        ScreenGui:Destroy()
+        PanelOpen = false
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
+            Size = UDim2.new(0, 0, 0, 0),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            Transparency = 1
+        }):Play()
+        task.delay(0.3, function()
+            MainFrame.Visible = false
+        end)
     end)
     
     -- Container de botões
     local ScrollFrame = Instance.new("ScrollingFrame")
     ScrollFrame.Name = "ScrollFrame"
     ScrollFrame.Parent = MainFrame
-    ScrollFrame.Size = UDim2.new(1, -20, 1, -50)
-    ScrollFrame.Position = UDim2.new(0, 10, 0, 45)
+    ScrollFrame.Size = UDim2.new(1, -20, 1, -60)
+    ScrollFrame.Position = UDim2.new(0, 10, 0, 55)
     ScrollFrame.BackgroundTransparency = 1
     ScrollFrame.BorderSizePixel = 0
-    ScrollFrame.ScrollBarThickness = 2
-    ScrollFrame.ScrollBarImageColor3 = Color3.new(1, 1, 1)
-    ScrollFrame.ScrollBarImageTransparency = 0.5
-    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 500)
+    ScrollFrame.ScrollBarThickness = 3
+    ScrollFrame.ScrollBarImageColor3 = Color3.new(0.3, 0.8, 1)
+    ScrollFrame.ScrollBarImageTransparency = 0.3
+    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 550)
     
     local Layout = Instance.new("UIListLayout")
     Layout.Parent = ScrollFrame
-    Layout.Padding = UDim.new(0, 8)
+    Layout.Padding = UDim.new(0, 10)
     Layout.SortOrder = Enum.SortOrder.LayoutOrder
     
-    -- Função para criar botões
-    local function CreateGlassButton(text, layoutOrder)
+    -- Função para criar botões premium
+    local function CreatePremiumButton(text, layoutOrder)
         local Button = Instance.new("TextButton")
         Button.Name = text.."Button"
         Button.Parent = ScrollFrame
-        Button.Size = UDim2.new(1, 0, 0, 40)
+        Button.Size = UDim2.new(1, 0, 0, 45)
         Button.LayoutOrder = layoutOrder
         Button.BackgroundColor3 = Color3.new(1, 1, 1)
-        Button.BackgroundTransparency = 0.85
+        Button.BackgroundTransparency = 0.9
         Button.BorderSizePixel = 0
         Button.Text = text
         Button.Font = Enum.Font.GothamBold
-        Button.TextSize = 14
+        Button.TextSize = 15
         Button.TextColor3 = Color3.new(1, 1, 1)
         Button.AutoButtonColor = false
         
         local Corner = Instance.new("UICorner")
-        Corner.CornerRadius = UDim.new(0, 10)
+        Corner.CornerRadius = UDim.new(0, 12)
         Corner.Parent = Button
         
         local Stroke = Instance.new("UIStroke")
-        Stroke.Color = Color3.new(1, 1, 1)
-        Stroke.Transparency = 0.5
-        Stroke.Thickness = 1
+        Stroke.Color = Color3.new(0.3, 0.8, 1)
+        Stroke.Transparency = 0.4
+        Stroke.Thickness = 1.5
         Stroke.Parent = Button
+        
+        local Gradient = Instance.new("UIGradient")
+        Gradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.new(0.2, 0.6, 1)),
+            ColorSequenceKeypoint.new(1, Color3.new(0.4, 0.3, 1))
+        })
+        Gradient.Rotation = 90
+        Gradient.Parent = Button
         
         -- Efeito hover
         Button.MouseEnter:Connect(function()
-            TweenService:Create(Button, TweenInfo.new(0.2), {
-                BackgroundTransparency = 0.7
+            TweenService:Create(Button, TweenInfo.new(0.3), {
+                BackgroundTransparency = 0.7,
+                Size = UDim2.new(1, -10, 0, 45)
             }):Play()
         end)
         
         Button.MouseLeave:Connect(function()
-            TweenService:Create(Button, TweenInfo.new(0.2), {
-                BackgroundTransparency = 0.85
+            TweenService:Create(Button, TweenInfo.new(0.3), {
+                BackgroundTransparency = 0.9,
+                Size = UDim2.new(1, 0, 0, 45)
             }):Play()
         end)
         
         -- Efeito clique
         Button.MouseButton1Click:Connect(function()
             TweenService:Create(Button, TweenInfo.new(0.1), {
-                Size = UDim2.new(1, -10, 0, 38)
+                Size = UDim2.new(1, -20, 0, 40)
             }):Play()
             task.wait(0.1)
             TweenService:Create(Button, TweenInfo.new(0.1), {
-                Size = UDim2.new(1, 0, 0, 40)
+                Size = UDim2.new(1, 0, 0, 45)
             }):Play()
         end)
         
@@ -417,55 +516,55 @@ local function CreateUI()
     end
     
     -- Criar botões
-    local ESPButton = CreateGlassButton("ESP: OFF", 1)
-    local FlyButton = CreateGlassButton("Fly: OFF", 2)
+    local ESPButton = CreatePremiumButton("🟢 ESP: OFF", 1)
+    local FlyButton = CreatePremiumButton("🪽 Fly: OFF", 2)
     
     -- Separador
     local Separator1 = Instance.new("Frame")
     Separator1.Parent = ScrollFrame
     Separator1.Size = UDim2.new(1, 0, 0, 2)
     Separator1.LayoutOrder = 3
-    Separator1.BackgroundColor3 = Color3.new(1, 1, 1)
+    Separator1.BackgroundColor3 = Color3.new(0.3, 0.8, 1)
     Separator1.BackgroundTransparency = 0.5
     Separator1.BorderSizePixel = 0
     
-    local Tele1Button = CreateGlassButton("Teleport 1", 4)
-    local Tele2Button = CreateGlassButton("Teleport 2", 5)
+    local Tele1Button = CreatePremiumButton("📍 Teleport 1", 4)
+    local Tele2Button = CreatePremiumButton("📍 Teleport 2", 5)
     
     local Separator2 = Instance.new("Frame")
     Separator2.Parent = ScrollFrame
     Separator2.Size = UDim2.new(1, 0, 0, 2)
     Separator2.LayoutOrder = 6
-    Separator2.BackgroundColor3 = Color3.new(1, 1, 1)
+    Separator2.BackgroundColor3 = Color3.new(0.3, 0.8, 1)
     Separator2.BackgroundTransparency = 0.5
     Separator2.BorderSizePixel = 0
     
-    local Path1Button = CreateGlassButton("Path 1", 7)
-    local Path2Button = CreateGlassButton("Path 2", 8)
-    local Path3Button = CreateGlassButton("Path 3", 9)
-    local Path4Button = CreateGlassButton("Path 4", 10)
+    local Path1Button = CreatePremiumButton("🛤️ Path 1", 7)
+    local Path2Button = CreatePremiumButton("🛤️ Path 2", 8)
+    local Path3Button = CreatePremiumButton("🛤️ Path 3", 9)
+    local Path4Button = CreatePremiumButton("🛤️ Path 4", 10)
     
-    local NextPathButton = CreateGlassButton("Next Path ►", 11)
-    local PrevPathButton = CreateGlassButton("◄ Previous Path", 12)
+    local NextPathButton = CreatePremiumButton("➡️ Next Path", 11)
+    local PrevPathButton = CreatePremiumButton("⬅️ Previous Path", 12)
     
     -- Conexões
     ESPButton.MouseButton1Click:Connect(function()
         if ESP_On then
             DisableESP()
-            ESPButton.Text = "ESP: OFF"
+            ESPButton.Text = "🟢 ESP: OFF"
         else
             EnableESP()
-            ESPButton.Text = "ESP: ON"
+            ESPButton.Text = "🟢 ESP: ON"
         end
     end)
     
     FlyButton.MouseButton1Click:Connect(function()
         if Fly_On then
             DisableFly()
-            FlyButton.Text = "Fly: OFF"
+            FlyButton.Text = "🪽 Fly: OFF"
         else
             EnableFly()
-            FlyButton.Text = "Fly: ON"
+            FlyButton.Text = "🪽 Fly: ON"
         end
     end)
     
@@ -486,12 +585,33 @@ local function CreateUI()
     NextPathButton.MouseButton1Click:Connect(function() NextPath() end)
     PrevPathButton.MouseButton1Click:Connect(function() PrevPath() end)
     
-    -- Animação de entrada
-    MainFrame.Transparency = 1
-    
-    TweenService:Create(MainFrame, TweenInfo.new(0.5), {
-        Transparency = 0
-    }):Play()
+    -- Função para abrir/fechar painel
+    ToggleButton.MouseButton1Click:Connect(function()
+        PanelOpen = not PanelOpen
+        
+        if PanelOpen then
+            MainFrame.Visible = true
+            MainFrame.Size = UDim2.new(0, 0, 0, 0)
+            MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+            MainFrame.Transparency = 1
+            
+            TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {
+                Size = UDim2.new(0, 350, 0, 500),
+                Position = UDim2.new(0.5, -175, 0.5, -250),
+                Transparency = 0
+            }):Play()
+        else
+            TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back), {
+                Size = UDim2.new(0, 0, 0, 0),
+                Position = UDim2.new(0.5, 0, 0.5, 0),
+                Transparency = 1
+            }):Play()
+            
+            task.delay(0.3, function()
+                MainFrame.Visible = false
+            end)
+        end
+    end)
     
     Notify("Veny Panel", "Executado com sucesso ✔", 3)
 end
