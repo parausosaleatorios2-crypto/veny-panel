@@ -1,10 +1,12 @@
--- Veny Panel Script
--- Hospedado no GitHub para uso com loadstring
+-- Veny Panel - Versão Glass Profissional
+-- Atualize o arquivo no GitHub com este código
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
 
 -- Configurações
 local FlySpeed = 50
@@ -26,18 +28,108 @@ local FlyBody = nil
 local FlyGyro = nil
 local CurrentPath = 1
 
--- Notificações
-local function Notify(msg)
+-- Notificações Customizadas
+local function Notify(title, message, duration)
+    duration = duration or 3
     pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "Veny Panel",
-            Text = msg,
-            Duration = 2
-        })
+        local ScreenGui = game:GetService("CoreGui"):FindFirstChild("VenyNotifications")
+        if not ScreenGui then
+            ScreenGui = Instance.new("ScreenGui")
+            ScreenGui.Name = "VenyNotifications"
+            ScreenGui.Parent = game:GetService("CoreGui")
+            ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        end
+        
+        local Notification = Instance.new("Frame")
+        Notification.Name = "Notification"
+        Notification.Parent = ScreenGui
+        Notification.Size = UDim2.new(0, 280, 0, 60)
+        Notification.Position = UDim2.new(1, -290, 0, -70)
+        Notification.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+        Notification.BackgroundTransparency = 0.2
+        Notification.BorderSizePixel = 0
+        Notification.ClipsDescendants = true
+        
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 12)
+        Corner.Parent = Notification
+        
+        local Stroke = Instance.new("UIStroke")
+        Stroke.Color = Color3.new(1, 1, 1)
+        Stroke.Transparency = 0.7
+        Stroke.Thickness = 1
+        Stroke.Parent = Notification
+        
+        local Icon = Instance.new("TextLabel")
+        Icon.Parent = Notification
+        Icon.Size = UDim2.new(0, 30, 0, 30)
+        Icon.Position = UDim2.new(0, 15, 0.5, -15)
+        Icon.BackgroundTransparency = 1
+        Icon.Text = "✔"
+        Icon.Font = Enum.Font.GothamBold
+        Icon.TextSize = 20
+        Icon.TextColor3 = Color3.new(0, 1, 0)
+        
+        local TitleLabel = Instance.new("TextLabel")
+        TitleLabel.Parent = Notification
+        TitleLabel.Size = UDim2.new(1, -60, 0, 20)
+        TitleLabel.Position = UDim2.new(0, 55, 0, 10)
+        TitleLabel.BackgroundTransparency = 1
+        TitleLabel.Text = title
+        TitleLabel.Font = Enum.Font.GothamBold
+        TitleLabel.TextSize = 14
+        TitleLabel.TextColor3 = Color3.new(1, 1, 1)
+        TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+        
+        local MessageLabel = Instance.new("TextLabel")
+        MessageLabel.Parent = Notification
+        MessageLabel.Size = UDim2.new(1, -60, 0, 20)
+        MessageLabel.Position = UDim2.new(0, 55, 0, 30)
+        MessageLabel.BackgroundTransparency = 1
+        MessageLabel.Text = message
+        MessageLabel.Font = Enum.Font.Gotham
+        MessageLabel.TextSize = 12
+        MessageLabel.TextColor3 = Color3.new(0.8, 0.8, 0.8)
+        MessageLabel.TextXAlignment = Enum.TextXAlignment.Left
+        
+        -- Empurrar notificações existentes para baixo
+        local existingNotifications = ScreenGui:GetChildren()
+        for _, notif in pairs(existingNotifications) do
+            if notif ~= Notification and notif:IsA("Frame") then
+                TweenService:Create(notif, TweenInfo.new(0.3), {
+                    Position = notif.Position + UDim2.new(0, 0, 0, 70)
+                }):Play()
+            end
+        end
+        
+        -- Animação de entrada
+        Notification.Position = UDim2.new(1, -290, 0, -70)
+        Notification.Transparency = 1
+        
+        TweenService:Create(Notification, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {
+            Position = UDim2.new(1, -290, 1, -70),
+            Transparency = 0
+        }):Play()
+        
+        -- Remover após duration
+        task.delay(duration, function()
+            pcall(function()
+                TweenService:Create(Notification, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {
+                    Position = UDim2.new(1, -290, 1, 10),
+                    Transparency = 1
+                }):Play()
+                
+                task.delay(0.5, function()
+                    pcall(function()
+                        Notification:Destroy()
+                    end)
+                end)
+            end)
+        end)
     end)
 end
 
--- ESP
+-- ESP Functions
 local function AddESP(player)
     if player == LocalPlayer then return end
     if ESP_Highlights[player] then return end
@@ -47,9 +139,10 @@ local function AddESP(player)
     
     pcall(function()
         local hl = Instance.new("Highlight")
-        hl.FillColor = Color3.new(0, 255, 0)
-        hl.FillTransparency = 0.5
-        hl.OutlineColor = Color3.new(0, 255, 0)
+        hl.FillColor = Color3.new(0, 1, 0)
+        hl.FillTransparency = 0.3
+        hl.OutlineColor = Color3.new(0, 1, 0)
+        hl.OutlineTransparency = 0
         hl.Adornee = char
         hl.Parent = char
         ESP_Highlights[player] = hl
@@ -61,7 +154,7 @@ local function EnableESP()
     for _, player in pairs(Players:GetPlayers()) do
         AddESP(player)
     end
-    Notify("ESP ON")
+    Notify("ESP", "Sistema de ESP ativado", 2)
 end
 
 local function DisableESP()
@@ -70,10 +163,10 @@ local function DisableESP()
         pcall(function() hl:Destroy() end)
         ESP_Highlights[player] = nil
     end
-    Notify("ESP OFF")
+    Notify("ESP", "Sistema de ESP desativado", 2)
 end
 
--- Fly
+-- Fly Functions
 local function EnableFly()
     if Fly_On then return end
     Fly_On = true
@@ -135,7 +228,7 @@ local function EnableFly()
         end
     end)
     
-    Notify("Fly ON")
+    Notify("Fly", "Modo de voo ativado", 2)
 end
 
 local function DisableFly()
@@ -157,10 +250,10 @@ local function DisableFly()
         end
     end
     
-    Notify("Fly OFF")
+    Notify("Fly", "Modo de voo desativado", 2)
 end
 
--- Teleporte
+-- Teleport Functions
 local function Teleport(cf)
     local char = LocalPlayer.Character
     if not char then return end
@@ -172,12 +265,12 @@ local function Teleport(cf)
     end)
 end
 
--- Paths
+-- Path Functions
 local function TeleportToPath(index)
     if Paths[index] then
         Teleport(Paths[index])
         CurrentPath = index
-        Notify("Path "..index)
+        Notify("Path Teleport", "Teleportado para o Path "..index, 2)
     end
 end
 
@@ -193,104 +286,255 @@ local function PrevPath()
     TeleportToPath(CurrentPath)
 end
 
--- Interface
+-- Criar UI Glass Profissional
 local function CreateUI()
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "VenyPanel"
-    gui.Parent = game:GetService("CoreGui")
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "VenyPanel"
+    ScreenGui.Parent = game:GetService("CoreGui")
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     
-    local frame = Instance.new("Frame")
-    frame.Parent = gui
-    frame.Size = UDim2.new(0, 200, 0, 300)
-    frame.Position = UDim2.new(1, -210, 0.5, -150)
-    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
-    frame.BorderSizePixel = 0
-    frame.Active = true
-    frame.Draggable = true
+    -- Container principal
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Parent = ScreenGui
+    MainFrame.Size = UDim2.new(0, 300, 0, 450)
+    MainFrame.Position = UDim2.new(1, -310, 0.5, -225)
+    MainFrame.BackgroundColor3 = Color3.new(0.15, 0.15, 0.15)
+    MainFrame.BackgroundTransparency = 0.3
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
     
-    local title = Instance.new("TextLabel")
-    title.Parent = frame
-    title.Size = UDim2.new(1, 0, 0, 25)
-    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-    title.Text = "Veny Panel"
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 14
-    title.TextColor3 = Color3.new(1, 1, 1)
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 16)
+    MainCorner.Parent = MainFrame
     
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Parent = frame
-    scroll.Size = UDim2.new(1, 0, 1, -25)
-    scroll.Position = UDim2.new(0, 0, 0, 25)
-    scroll.BackgroundTransparency = 1
-    scroll.ScrollBarThickness = 2
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 400)
+    local MainStroke = Instance.new("UIStroke")
+    MainStroke.Color = Color3.new(1, 1, 1)
+    MainStroke.Transparency = 0.5
+    MainStroke.Thickness = 1.5
+    MainStroke.Parent = MainFrame
     
-    local layout = Instance.new("UIListLayout")
-    layout.Parent = scroll
-    layout.Padding = UDim.new(0, 5)
+    -- Efeito de vidro
+    local GlassEffect = Instance.new("ImageLabel")
+    GlassEffect.Name = "GlassEffect"
+    GlassEffect.Parent = MainFrame
+    GlassEffect.Size = UDim2.new(1, 0, 1, 0)
+    GlassEffect.BackgroundTransparency = 1
+    GlassEffect.Image = "rbxassetid://9968344105"
+    GlassEffect.ImageTransparency = 0.7
+    GlassEffect.ScaleType = Enum.ScaleType.Stretch
     
-    local function MakeButton(text)
-        local btn = Instance.new("TextButton")
-        btn.Parent = scroll
-        btn.Size = UDim2.new(1, -20, 0, 30)
-        btn.Position = UDim2.new(0, 10, 0, 0)
-        btn.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
-        btn.Text = text
-        btn.Font = Enum.Font.Gotham
-        btn.TextSize = 12
-        btn.TextColor3 = Color3.new(1, 1, 1)
-        btn.BorderSizePixel = 0
-        btn.AutoButtonColor = false
-        return btn
+    local GlassCorner = Instance.new("UICorner")
+    GlassCorner.CornerRadius = UDim.new(0, 16)
+    GlassCorner.Parent = GlassEffect
+    
+    -- Título
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Name = "TitleBar"
+    TitleBar.Parent = MainFrame
+    TitleBar.Size = UDim2.new(1, 0, 0, 40)
+    TitleBar.BackgroundColor3 = Color3.new(1, 1, 1)
+    TitleBar.BackgroundTransparency = 0.9
+    TitleBar.BorderSizePixel = 0
+    
+    local TitleCorner = Instance.new("UICorner")
+    TitleCorner.CornerRadius = UDim.new(0, 16)
+    TitleCorner.Parent = TitleBar
+    
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Parent = TitleBar
+    TitleLabel.Size = UDim2.new(1, -40, 1, 0)
+    TitleLabel.Position = UDim2.new(0, 20, 0, 0)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = "VENY PANEL"
+    TitleLabel.Font = Enum.Font.GothamBlack
+    TitleLabel.TextSize = 18
+    TitleLabel.TextColor3 = Color3.new(1, 1, 1)
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    -- Botão fechar
+    local CloseButton = Instance.new("TextButton")
+    CloseButton.Parent = MainFrame
+    CloseButton.Size = UDim2.new(0, 30, 0, 30)
+    CloseButton.Position = UDim2.new(1, -35, 0, 5)
+    CloseButton.BackgroundColor3 = Color3.new(1, 0, 0)
+    CloseButton.BackgroundTransparency = 0.7
+    CloseButton.BorderSizePixel = 0
+    CloseButton.Text = "✕"
+    CloseButton.Font = Enum.Font.GothamBold
+    CloseButton.TextSize = 16
+    CloseButton.TextColor3 = Color3.new(1, 1, 1)
+    
+    local CloseCorner = Instance.new("UICorner")
+    CloseCorner.CornerRadius = UDim.new(0, 8)
+    CloseCorner.Parent = CloseButton
+    
+    CloseButton.MouseButton1Click:Connect(function()
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {
+            Size = UDim2.new(0, 0, 0, 0),
+            Position = UDim2.new(1, 0, 0.5, 0),
+            Transparency = 1
+        }):Play()
+        
+        task.delay(0.3, function()
+            ScreenGui:Destroy()
+        end)
+    end)
+    
+    -- Container de botões
+    local ScrollFrame = Instance.new("ScrollingFrame")
+    ScrollFrame.Name = "ScrollFrame"
+    ScrollFrame.Parent = MainFrame
+    ScrollFrame.Size = UDim2.new(1, -20, 1, -50)
+    ScrollFrame.Position = UDim2.new(0, 10, 0, 45)
+    ScrollFrame.BackgroundTransparency = 1
+    ScrollFrame.BorderSizePixel = 0
+    ScrollFrame.ScrollBarThickness = 2
+    ScrollFrame.ScrollBarImageColor3 = Color3.new(1, 1, 1)
+    ScrollFrame.ScrollBarImageTransparency = 0.7
+    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 600)
+    
+    local Layout = Instance.new("UIListLayout")
+    Layout.Parent = ScrollFrame
+    Layout.Padding = UDim.new(0, 8)
+    Layout.SortOrder = Enum.SortOrder.LayoutOrder
+    
+    -- Função para criar botões glass
+    local function CreateGlassButton(text, layoutOrder)
+        local Button = Instance.new("TextButton")
+        Button.Name = text.."Button"
+        Button.Parent = ScrollFrame
+        Button.Size = UDim2.new(1, 0, 0, 40)
+        Button.LayoutOrder = layoutOrder
+        Button.BackgroundColor3 = Color3.new(1, 1, 1)
+        Button.BackgroundTransparency = 0.9
+        Button.BorderSizePixel = 0
+        Button.Text = text
+        Button.Font = Enum.Font.GothamBold
+        Button.TextSize = 14
+        Button.TextColor3 = Color3.new(1, 1, 1)
+        Button.AutoButtonColor = false
+        
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 10)
+        Corner.Parent = Button
+        
+        local Stroke = Instance.new("UIStroke")
+        Stroke.Color = Color3.new(1, 1, 1)
+        Stroke.Transparency = 0.6
+        Stroke.Thickness = 1
+        Stroke.Parent = Button
+        
+        -- Efeito hover
+        Button.MouseEnter:Connect(function()
+            TweenService:Create(Button, TweenInfo.new(0.2), {
+                BackgroundTransparency = 0.7,
+                Size = UDim2.new(1, -5, 0, 40)
+            }):Play()
+        end)
+        
+        Button.MouseLeave:Connect(function()
+            TweenService:Create(Button, TweenInfo.new(0.2), {
+                BackgroundTransparency = 0.9,
+                Size = UDim2.new(1, 0, 0, 40)
+            }):Play()
+        end)
+        
+        -- Efeito clique
+        Button.MouseButton1Click:Connect(function()
+            TweenService:Create(Button, TweenInfo.new(0.1), {
+                Size = UDim2.new(1, -10, 0, 38)
+            }):Play()
+            task.wait(0.1)
+            TweenService:Create(Button, TweenInfo.new(0.1), {
+                Size = UDim2.new(1, 0, 0, 40)
+            }):Play()
+        end)
+        
+        return Button
     end
     
-    local espBtn = MakeButton("ESP: OFF")
-    local flyBtn = MakeButton("Fly: OFF")
-    local tele1Btn = MakeButton("Teleport 1")
-    local tele2Btn = MakeButton("Teleport 2")
-    local path1Btn = MakeButton("Path 1")
-    local path2Btn = MakeButton("Path 2")
-    local path3Btn = MakeButton("Path 3")
-    local path4Btn = MakeButton("Path 4")
-    local nextBtn = MakeButton("Next Path")
-    local prevBtn = MakeButton("Previous Path")
+    -- Criar botões
+    local ESPButton = CreateGlassButton("ESP: OFF", 1)
+    local FlyButton = CreateGlassButton("Fly: OFF", 2)
     
-    espBtn.MouseButton1Click:Connect(function()
+    -- Separador
+    local Separator1 = Instance.new("Frame")
+    Separator1.Parent = ScrollFrame
+    Separator1.Size = UDim2.new(1, 0, 0, 2)
+    Separator1.LayoutOrder = 3
+    Separator1.BackgroundColor3 = Color3.new(1, 1, 1)
+    Separator1.BackgroundTransparency = 0.5
+    Separator1.BorderSizePixel = 0
+    
+    local Tele1Button = CreateGlassButton("Teleport 1", 4)
+    local Tele2Button = CreateGlassButton("Teleport 2", 5)
+    
+    local Separator2 = Instance.new("Frame")
+    Separator2.Parent = ScrollFrame
+    Separator2.Size = UDim2.new(1, 0, 0, 2)
+    Separator2.LayoutOrder = 6
+    Separator2.BackgroundColor3 = Color3.new(1, 1, 1)
+    Separator2.BackgroundTransparency = 0.5
+    Separator2.BorderSizePixel = 0
+    
+    local Path1Button = CreateGlassButton("Path 1", 7)
+    local Path2Button = CreateGlassButton("Path 2", 8)
+    local Path3Button = CreateGlassButton("Path 3", 9)
+    local Path4Button = CreateGlassButton("Path 4", 10)
+    
+    local NextPathButton = CreateGlassButton("Next Path ►", 11)
+    local PrevPathButton = CreateGlassButton("◄ Previous Path", 12)
+    
+    -- Conexões
+    ESPButton.MouseButton1Click:Connect(function()
         if ESP_On then
             DisableESP()
-            espBtn.Text = "ESP: OFF"
+            ESPButton.Text = "ESP: OFF"
         else
             EnableESP()
-            espBtn.Text = "ESP: ON"
+            ESPButton.Text = "ESP: ON"
         end
     end)
     
-    flyBtn.MouseButton1Click:Connect(function()
+    FlyButton.MouseButton1Click:Connect(function()
         if Fly_On then
             DisableFly()
-            flyBtn.Text = "Fly: OFF"
+            FlyButton.Text = "Fly: OFF"
         else
             EnableFly()
-            flyBtn.Text = "Fly: ON"
+            FlyButton.Text = "Fly: ON"
         end
     end)
     
-    tele1Btn.MouseButton1Click:Connect(function()
+    Tele1Button.MouseButton1Click:Connect(function()
         Teleport(TeleportPosition1)
-        Notify("Teleport 1")
+        Notify("Teleporte", "Teleportado para Posição 1", 2)
     end)
     
-    tele2Btn.MouseButton1Click:Connect(function()
+    Tele2Button.MouseButton1Click:Connect(function()
         Teleport(TeleportPosition2)
-        Notify("Teleport 2")
+        Notify("Teleporte", "Teleportado para Posição 2", 2)
     end)
     
-    path1Btn.MouseButton1Click:Connect(function() TeleportToPath(1) end)
-    path2Btn.MouseButton1Click:Connect(function() TeleportToPath(2) end)
-    path3Btn.MouseButton1Click:Connect(function() TeleportToPath(3) end)
-    path4Btn.MouseButton1Click:Connect(function() TeleportToPath(4) end)
-    nextBtn.MouseButton1Click:Connect(function() NextPath() end)
-    prevBtn.MouseButton1Click:Connect(function() PrevPath() end)
+    Path1Button.MouseButton1Click:Connect(function() TeleportToPath(1) end)
+    Path2Button.MouseButton1Click:Connect(function() TeleportToPath(2) end)
+    Path3Button.MouseButton1Click:Connect(function() TeleportToPath(3) end)
+    Path4Button.MouseButton1Click:Connect(function() TeleportToPath(4) end)
+    NextPathButton.MouseButton1Click:Connect(function() NextPath() end)
+    PrevPathButton.MouseButton1Click:Connect(function() PrevPath() end)
+    
+    -- Animação de entrada
+    MainFrame.Position = UDim2.new(1, -310, 0.5, -225)
+    MainFrame.Transparency = 1
+    
+    TweenService:Create(MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quart), {
+        Position = UDim2.new(1, -310, 0.5, -225),
+        Transparency = 0
+    }):Play()
+    
+    Notify("Veny Panel", "Executado com sucesso ✔", 3)
 end
 
 -- Monitorar eventos
@@ -317,4 +561,4 @@ end)
 
 -- Iniciar
 CreateUI()
-print("Veny Panel carregado!")
+print("Veny Panel executado com sucesso!")
