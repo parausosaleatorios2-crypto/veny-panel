@@ -1,0 +1,320 @@
+-- Veny Panel Script
+-- Hospedado no GitHub para uso com loadstring
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- Configurações
+local FlySpeed = 50
+local TeleportPosition1 = CFrame.new(0, 50, 0)
+local TeleportPosition2 = CFrame.new(100, 50, 0)
+
+local Paths = {
+    CFrame.new(0, 20, 0),
+    CFrame.new(50, 20, 0),
+    CFrame.new(100, 20, 0),
+    CFrame.new(150, 20, 0),
+}
+
+-- Variáveis
+local ESP_On = false
+local Fly_On = false
+local ESP_Highlights = {}
+local FlyBody = nil
+local FlyGyro = nil
+local CurrentPath = 1
+
+-- Notificações
+local function Notify(msg)
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "Veny Panel",
+            Text = msg,
+            Duration = 2
+        })
+    end)
+end
+
+-- ESP
+local function AddESP(player)
+    if player == LocalPlayer then return end
+    if ESP_Highlights[player] then return end
+    
+    local char = player.Character
+    if not char then return end
+    
+    pcall(function()
+        local hl = Instance.new("Highlight")
+        hl.FillColor = Color3.new(0, 255, 0)
+        hl.FillTransparency = 0.5
+        hl.OutlineColor = Color3.new(0, 255, 0)
+        hl.Adornee = char
+        hl.Parent = char
+        ESP_Highlights[player] = hl
+    end)
+end
+
+local function EnableESP()
+    ESP_On = true
+    for _, player in pairs(Players:GetPlayers()) do
+        AddESP(player)
+    end
+    Notify("ESP ON")
+end
+
+local function DisableESP()
+    ESP_On = false
+    for player, hl in pairs(ESP_Highlights) do
+        pcall(function() hl:Destroy() end)
+        ESP_Highlights[player] = nil
+    end
+    Notify("ESP OFF")
+end
+
+-- Fly
+local function EnableFly()
+    if Fly_On then return end
+    Fly_On = true
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local hum = char:FindFirstChild("Humanoid")
+    if not root or not hum then return end
+    
+    pcall(function()
+        FlyBody = Instance.new("BodyVelocity")
+        FlyBody.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        FlyBody.Velocity = Vector3.new(0, 0, 0)
+        FlyBody.Parent = root
+        
+        FlyGyro = Instance.new("BodyGyro")
+        FlyGyro.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        FlyGyro.CFrame = root.CFrame
+        FlyGyro.Parent = root
+        
+        hum.PlatformStand = true
+    end)
+    
+    task.spawn(function()
+        while Fly_On do
+            pcall(function()
+                if FlyBody and FlyBody.Parent then
+                    local dir = Vector3.new(0, 0, 0)
+                    
+                    if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                        dir = dir + Camera.CFrame.LookVector
+                    end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                        dir = dir - Camera.CFrame.LookVector
+                    end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                        dir = dir - Camera.CFrame.RightVector
+                    end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                        dir = dir + Camera.CFrame.RightVector
+                    end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                        dir = dir + Vector3.new(0, 1, 0)
+                    end
+                    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                        dir = dir + Vector3.new(0, -1, 0)
+                    end
+                    
+                    if dir.Magnitude > 0 then
+                        dir = dir.Unit * FlySpeed
+                    end
+                    
+                    FlyBody.Velocity = dir
+                    FlyGyro.CFrame = Camera.CFrame
+                end
+            end)
+            task.wait()
+        end
+    end)
+    
+    Notify("Fly ON")
+end
+
+local function DisableFly()
+    Fly_On = false
+    
+    pcall(function()
+        if FlyBody then FlyBody:Destroy() end
+        if FlyGyro then FlyGyro:Destroy() end
+    end)
+    
+    FlyBody = nil
+    FlyGyro = nil
+    
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChild("Humanoid")
+        if hum then
+            hum.PlatformStand = false
+        end
+    end
+    
+    Notify("Fly OFF")
+end
+
+-- Teleporte
+local function Teleport(cf)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    pcall(function()
+        root.CFrame = cf
+    end)
+end
+
+-- Paths
+local function TeleportToPath(index)
+    if Paths[index] then
+        Teleport(Paths[index])
+        CurrentPath = index
+        Notify("Path "..index)
+    end
+end
+
+local function NextPath()
+    CurrentPath = CurrentPath + 1
+    if CurrentPath > #Paths then CurrentPath = 1 end
+    TeleportToPath(CurrentPath)
+end
+
+local function PrevPath()
+    CurrentPath = CurrentPath - 1
+    if CurrentPath < 1 then CurrentPath = #Paths end
+    TeleportToPath(CurrentPath)
+end
+
+-- Interface
+local function CreateUI()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "VenyPanel"
+    gui.Parent = game:GetService("CoreGui")
+    
+    local frame = Instance.new("Frame")
+    frame.Parent = gui
+    frame.Size = UDim2.new(0, 200, 0, 300)
+    frame.Position = UDim2.new(1, -210, 0.5, -150)
+    frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Draggable = true
+    
+    local title = Instance.new("TextLabel")
+    title.Parent = frame
+    title.Size = UDim2.new(1, 0, 0, 25)
+    title.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    title.Text = "Veny Panel"
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.TextColor3 = Color3.new(1, 1, 1)
+    
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Parent = frame
+    scroll.Size = UDim2.new(1, 0, 1, -25)
+    scroll.Position = UDim2.new(0, 0, 0, 25)
+    scroll.BackgroundTransparency = 1
+    scroll.ScrollBarThickness = 2
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 400)
+    
+    local layout = Instance.new("UIListLayout")
+    layout.Parent = scroll
+    layout.Padding = UDim.new(0, 5)
+    
+    local function MakeButton(text)
+        local btn = Instance.new("TextButton")
+        btn.Parent = scroll
+        btn.Size = UDim2.new(1, -20, 0, 30)
+        btn.Position = UDim2.new(0, 10, 0, 0)
+        btn.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+        btn.Text = text
+        btn.Font = Enum.Font.Gotham
+        btn.TextSize = 12
+        btn.TextColor3 = Color3.new(1, 1, 1)
+        btn.BorderSizePixel = 0
+        btn.AutoButtonColor = false
+        return btn
+    end
+    
+    local espBtn = MakeButton("ESP: OFF")
+    local flyBtn = MakeButton("Fly: OFF")
+    local tele1Btn = MakeButton("Teleport 1")
+    local tele2Btn = MakeButton("Teleport 2")
+    local path1Btn = MakeButton("Path 1")
+    local path2Btn = MakeButton("Path 2")
+    local path3Btn = MakeButton("Path 3")
+    local path4Btn = MakeButton("Path 4")
+    local nextBtn = MakeButton("Next Path")
+    local prevBtn = MakeButton("Previous Path")
+    
+    espBtn.MouseButton1Click:Connect(function()
+        if ESP_On then
+            DisableESP()
+            espBtn.Text = "ESP: OFF"
+        else
+            EnableESP()
+            espBtn.Text = "ESP: ON"
+        end
+    end)
+    
+    flyBtn.MouseButton1Click:Connect(function()
+        if Fly_On then
+            DisableFly()
+            flyBtn.Text = "Fly: OFF"
+        else
+            EnableFly()
+            flyBtn.Text = "Fly: ON"
+        end
+    end)
+    
+    tele1Btn.MouseButton1Click:Connect(function()
+        Teleport(TeleportPosition1)
+        Notify("Teleport 1")
+    end)
+    
+    tele2Btn.MouseButton1Click:Connect(function()
+        Teleport(TeleportPosition2)
+        Notify("Teleport 2")
+    end)
+    
+    path1Btn.MouseButton1Click:Connect(function() TeleportToPath(1) end)
+    path2Btn.MouseButton1Click:Connect(function() TeleportToPath(2) end)
+    path3Btn.MouseButton1Click:Connect(function() TeleportToPath(3) end)
+    path4Btn.MouseButton1Click:Connect(function() TeleportToPath(4) end)
+    nextBtn.MouseButton1Click:Connect(function() NextPath() end)
+    prevBtn.MouseButton1Click:Connect(function() PrevPath() end)
+end
+
+-- Monitorar eventos
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        if ESP_On then
+            task.wait(1)
+            AddESP(player)
+        end
+    end)
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if ESP_On then
+        DisableESP()
+        EnableESP()
+    end
+    if Fly_On then
+        DisableFly()
+        EnableFly()
+    end
+end)
+
+-- Iniciar
+CreateUI()
+print("Veny Panel carregado!")
