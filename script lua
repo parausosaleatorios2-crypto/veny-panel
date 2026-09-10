@@ -1,1006 +1,376 @@
 --[[
-    Veny Combat Panel - LocalScript
-    Coloque este script em StarterPlayer > StarterPlayerScripts ou StarterGui
-    Interface moderna com ESP, Tracers, Aimbot, Aimlock, FOV, etc.
---]]
+    ROUBE UM OVO HUB - Rayfield Edition
+    Desenvolvido para ambiente de teste/autorizado.
+]]
 
--- Serviços
+-- =============================================================================
+-- SERVICES
+-- =============================================================================
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local CollectionService = game:GetService("CollectionService")
 local TweenService = game:GetService("TweenService")
-local Camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- Configurações
-local Settings = {
-    ESP = false,
-    Tracers = false,
-    Aimbot = false,
-    Aimlock = false,
-    TeamCheck = false,
-    VisibilityCheck = false,
-    TargetPart = "Head",
-    FOV = 120,
-    ShowFOV = true,
-    Smoothness = 5,
-    MaxDistance = 2000,
+-- =============================================================================
+-- RAYFIELD INITIALIZATION
+-- =============================================================================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Roube Um Ovo Hub",
+    LoadingTitle = "Carregando Hub...",
+    LoadingSubtitle = "by Claude AI",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "RoubeUmOvoHub",
+        FileName = "Config"
+    },
+    Discord = {
+        Enabled = false,
+        Invite = "",
+        RememberMe = true
+    },
+    KeySystem = false
+})
+
+-- =============================================================================
+-- CONFIGURATION & VARIABLES
+-- =============================================================================
+local RareEggNames = {
+    ["Rare"] = true,
+    ["Epic"] = true,
+    ["Legendary"] = true,
+    ["Mythic"] = true,
+    ["Secret"] = true,
+    ["Divine"] = true,
+    ["Celestial"] = true,
+    ["Exclusive"] = true
 }
 
--- Variáveis globais
-local UI = {}
-local Connections = {}
-local ESPObjects = {}
-local TracerFrames = {}
-local CurrentTarget = nil
-local lastNotifiedTarget = nil
-local NotificationContainer = nil
+local RareEggDetectorEnabled = false
+local NotificationsEnabled = true
+local LastRareEggData = {
+    Object = nil,
+    Name = "Nenhum",
+    Rarity = "Nenhuma",
+    Position = nil,
+    SpawnTime = nil
+}
+local DetectedEggs = {} -- Registry: { [object] = {Name, Rarity, Position, SpawnTime} }
 
--- Funções utilitárias
-local function GetCharacter(player)
-    return player and player.Character
-end
+-- =============================================================================
+-- UTILITY FUNCTIONS
+-- =============================================================================
 
-local function GetHumanoid(player)
-    local char = GetCharacter(player)
-    return char and char:FindFirstChildOfClass("Humanoid")
-end
+local function SafeTeleport(destination)
+    local character = LocalPlayer.Character
+    if not character then return end
 
-local function GetTargetPart(character)
-    if not character then return nil end
-    local partName = Settings.TargetPart
-    if partName == "Head" then
-        return character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
-    elseif partName == "Chest" then
-        return character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart")
-    elseif partName == "Neck" then
-        local head = character:FindFirstChild("Head")
-        local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
-        if head and torso then
-            return CFrame.new((head.Position + torso.Position) / 2)
-        else
-            return head or torso or character:FindFirstChild("HumanoidRootPart")
-        end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+    if hrp and humanoid and destination then
+        -- Teleporta levemente acima para evitar prender no chão
+        hrp.CFrame = destination + Vector3.new(0, 3, 0)
     end
-    return character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
 end
 
-local function GetTargetPosition(character)
-    local part = GetTargetPart(character)
-    if typeof(part) == "CFrame" then
-        return part.Position
-    elseif part and part:IsA("BasePart") then
-        return part.Position
+-- =============================================================================
+-- TELEPORT SYSTEM
+-- =============================================================================
+
+-- 1. Teleporte de Fases
+local function TeleportToStage(stagePart)
+    if stagePart and (stagePart:IsA("BasePart") or stagePart:IsA("Model")) then
+        local pos = stagePart:IsA("Model") and stagePart:GetPivot() or stagePart.Position
+        SafeTeleport(pos)
+    end
+end
+
+-- 2. Teleporte para a Base do Jogador
+local function FindPlayerBase()
+    local possibleFolders = {"Bases", "Plots", "PlayerBases", "Tycoons", "Houses"}
+    for _, folderName in ipairs(possibleFolders) do
+        local folder = Workspace:FindFirstChild(folderName)
+        if folder then
+            for _, base in ipairs(folder:GetChildren()) do
+                -- Verifica se a base pertence ao jogador via Atributos ou Valores
+                if base:GetAttribute("Owner") == LocalPlayer.Name or
+                   base:GetAttribute("UserId") == LocalPlayer.UserId or
+                   (base:FindFirstChild("Owner") and base.Owner.Value == LocalPlayer.Name) then
+
+                    -- Procura ponto de spawn dentro da base
+                    local spawnPoints = {"Spawn", "SpawnPoint", "BaseSpawn", "Entrance", "Home", "Center", "PrimaryPart"}
+                    for _, spName in ipairs(spawnPoints) do
+                        local sp = base:FindFirstChild(spName, true)
+                        if sp and sp:IsA("BasePart") then return sp.Position end
+                    end
+                    return base:GetPivot().Position
+                end
+            end
+        end
     end
     return nil
 end
 
-local function WorldToScreen(worldPos)
-    local screenPos, onScreen = Camera:WorldToScreenPoint(worldPos)
-    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+local function TeleportToBase()
+    local basePos = FindPlayerBase()
+    if basePos then
+        SafeTeleport(basePos)
+    else
+        Rayfield:Notify({
+            Title = "Erro",
+            Content = "Sua base não foi encontrada automaticamente.",
+            Duration = 5
+        })
+    end
 end
 
-local function IsInsideFOV(screenPos)
-    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    return (screenPos - center).Magnitude <= Settings.FOV
+-- 3. Teleporte para Ovos
+local function TeleportToEgg(egg)
+    if not egg then return end
+    local pos = egg:IsA("Model") and egg:GetPivot() or egg.Position
+    SafeTeleport(pos)
 end
 
-local function IsTargetValid(player)
-    if player == LocalPlayer then return false end
-    local character = GetCharacter(player)
-    if not character then return false end
-    local humanoid = GetHumanoid(player)
-    if not humanoid or humanoid.Health <= 0 then return false end
-    local targetPos = GetTargetPosition(character)
-    if not targetPos then return false end
+-- =============================================================================
+-- EGG DETECTION SYSTEM
+-- =============================================================================
 
-    if Settings.MaxDistance > 0 then
-        if (targetPos - Camera.CFrame.Position).Magnitude > Settings.MaxDistance then return false end
+local function IsEgg(object)
+    local eggKeywords = {"Egg", "Ovo", "EggSpawn", "EggModel", "EggDrop", "RareEgg", "LegendaryEgg", "MythicEgg"}
+    for _, keyword in ipairs(eggKeywords) do
+        if string.find(object.Name, keyword) then return true end
+    end
+    return false
+end
+
+local function GetEggRarity(object)
+    -- 1. Busca em Atributos
+    local rarity = object:GetAttribute("Rarity") or object:GetAttribute("Tier") or object:GetAttribute("Type")
+    if rarity then return rarity end
+
+    -- 2. Busca em objetos filhos
+    local rarityObj = object:FindFirstChild("Rarity") or object:FindFirstChild("Tier") or object:FindFirstChild("EggType")
+    if rarityObj and (rarityObj:IsA("StringValue") or rarityObj:IsA("IntValue")) then
+        return tostring(rarityObj.Value)
     end
 
-    if Settings.TeamCheck and player.Team == LocalPlayer.Team then return false end
-
-    if Settings.VisibilityCheck then
-        local rayParams = RaycastParams.new()
-        rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-        rayParams.FilterDescendantsInstances = {character}
-        local rayDir = (targetPos - Camera.CFrame.Position).Unit
-        local rayDist = (targetPos - Camera.CFrame.Position).Magnitude
-        local rayResult = workspace:Raycast(Camera.CFrame.Position, rayDir * rayDist, rayParams)
-        if rayResult then return false end
-    end
-
-    return true
+    return "Common"
 end
 
--- Notificações
-local function CreateNotification(text)
-    if not NotificationContainer then return end
+local function RegisterEgg(egg)
+    local rarity = GetEggRarity(egg)
+    local pos = egg:IsA("Model") and egg:GetPivot().Position or egg.Position
 
-    local notif = Instance.new("Frame")
-    notif.Size = UDim2.new(0, 200, 0, 30)
-    notif.Position = UDim2.new(0.5, -100, 1, -40)
-    notif.AnchorPoint = Vector2.new(0.5, 1)
-    notif.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    notif.BackgroundTransparency = 0.1
-    notif.BorderSizePixel = 0
-    notif.Parent = NotificationContainer
+    DetectedEggs[egg] = {
+        Name = egg.Name,
+        Rarity = rarity,
+        Position = pos,
+        SpawnTime = os.date("%H:%M:%S")
+    }
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = notif
+    -- Se for raro, atualiza o último ovo raro
+    if RareEggNames[rarity] then
+        LastRareEggData = {
+            Object = egg,
+            Name = egg.Name,
+            Rarity = rarity,
+            Position = pos,
+            SpawnTime = os.date("%H:%M:%S")
+        }
 
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(0, 255, 100)
-    stroke.Thickness = 1
-    stroke.Transparency = 0.3
-    stroke.Parent = notif
+        if NotificationsEnabled then
+            Rayfield:Notify({
+                Title = "🥚 Rare Egg Spawned!",
+                Content = string.format("Raridade: %s\nNome: %s\nHora: %s", rarity, egg.Name, LastRareEggData.SpawnTime),
+                Duration = 6
+            })
+        end
+    end
+end
 
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.Font = Enum.Font.GothamBold
-    label.TextSize = 14
-    label.TextColor3 = Color3.fromRGB(255, 255, 255)
-    label.TextWrapped = true
-    label.Parent = notif
+local function RemoveEgg(egg)
+    DetectedEggs[egg] = nil
+    if LastRareEggData.Object == egg then
+        LastRareEggData.Object = nil
+    end
+end
 
-    notif.Position = UDim2.new(0.5, -100, 1, 30)
-    local tweenIn = TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, -100, 1, -40)})
-    tweenIn:Play()
+-- Monitor de Ovos (Event-based)
+local function InitializeEggMonitor()
+    -- Verificação inicial
+    for _, desc in ipairs(Workspace:GetDescendants()) do
+        if IsEgg(desc) then RegisterEgg(desc) end
+    end
 
-    task.delay(3, function()
-        local tweenOut = TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(0.5, -100, 1, 30)})
-        tweenOut:Play()
-        tweenOut.Completed:Connect(function() notif:Destroy() end)
+    -- Monitoramento em tempo real
+    Workspace.DescendantAdded:Connect(function(desc)
+        task.wait(0.5) -- Espera carregar atributos
+        if IsEgg(desc) then
+            RegisterEgg(desc)
+        end
+    end)
+
+    Workspace.DescendantRemoving:Connect(function(desc)
+        RemoveEgg(desc)
     end)
 end
 
--- ESP
-local function CreateESP(player)
-    if ESPObjects[player] then return end
-    local char = GetCharacter(player)
-    if not char then return end
-    local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
-    if not head then return end
+-- =============================================================================
+-- RAYFIELD UI IMPLEMENTATION
+-- =============================================================================
 
-    local billboard = Instance.new("BillboardGui")
-    billboard.Adornee = head
-    billboard.Size = UDim2.new(0, 4, 0, 7)
-    billboard.StudsOffset = Vector3.new(0, 3.5, 0)
-    billboard.AlwaysOnTop = true
-    billboard.LightInfluence = 0
-    billboard.Parent = LocalPlayer.PlayerGui
+-- 🚀 ABA TELEPORTS
+local TeleportsTab = Window:CreateTab("Teleports", 4483362458) -- Ícone de foguete
+local StageSection = TeleportsTab:CreateSection("Stage Teleports")
 
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.BackgroundTransparency = 1
-    frame.BorderSizePixel = 0
-    frame.Parent = billboard
+-- Detecção automática de fases
+local stageFolders = {"Stages", "Checkpoints", "Areas", "Map", "Spawns"}
+local availableStages = {}
 
-    local stroke = Instance.new("UIStroke")
-    stroke.Color = Color3.fromRGB(0, 255, 0)
-    stroke.Thickness = 2
-    stroke.Parent = frame
-
-    ESPObjects[player] = billboard
-end
-
-local function RemoveESP(player)
-    if ESPObjects[player] then
-        ESPObjects[player]:Destroy()
-        ESPObjects[player] = nil
-    end
-end
-
-local function UpdateESP()
-    if Settings.ESP then
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then CreateESP(player) end
-        end
-    else
-        for player, gui in pairs(ESPObjects) do
-            gui:Destroy()
-            ESPObjects[player] = nil
+for _, folderName in ipairs(stageFolders) do
+    local folder = Workspace:FindFirstChild(folderName)
+    if folder then
+        for _, stage in ipairs(folder:GetChildren()) do
+            table.insert(availableStages, stage.Name)
         end
     end
 end
 
--- Tracers (usando Frames)
-local function CreateTracer(player)
-    if TracerFrames[player] then return end
-    local line = Instance.new("Frame")
-    line.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    line.BorderSizePixel = 0
-    line.AnchorPoint = Vector2.new(0.5, 0)
-    line.Size = UDim2.new(0, 2, 0, 0)
-    line.Visible = false
-    line.ZIndex = 5
-    line.Parent = UI.ScreenGui
-    TracerFrames[player] = line
-end
+local SelectedStage = ""
+local StageDropdown = TeleportsTab:CreateDropdown("Selecionar Fase", availableStages, function(option)
+    SelectedStage = option
+end)
 
-local function RemoveTracer(player)
-    if TracerFrames[player] then
-        TracerFrames[player]:Destroy()
-        TracerFrames[player] = nil
-    end
-end
-
-local function UpdateTracers()
-    if not Settings.Tracers then
-        for _, line in pairs(TracerFrames) do line.Visible = false end
+TeleportsTab:CreateButton("Teleportar para Fase", function()
+    if SelectedStage == "" then
+        Rayfield:Notify({Title = "Aviso", Content = "Selecione uma fase primeiro!", Duration = 3})
         return
     end
 
-    local viewport = Camera.ViewportSize
-    local startX = viewport.X / 2
-    local startY = viewport.Y * 0.95 -- ligeiramente abaixo do centro
-
-    for player, line in pairs(TracerFrames) do
-        local char = GetCharacter(player)
-        if char and char:FindFirstChild("HumanoidRootPart") then
-            local rootPos = char.HumanoidRootPart.Position
-            local screenPos, onScreen = WorldToScreen(rootPos)
-            if onScreen then
-                local delta = screenPos - Vector2.new(startX, startY)
-                local length = delta.Magnitude
-                if length > 1 then
-                    local angle = math.deg(math.atan2(delta.X, delta.Y))
-                    line.Size = UDim2.new(0, 2, 0, length)
-                    line.Position = UDim2.new(0, startX, 0, startY)
-                    line.Rotation = angle
-                    line.Visible = true
-                else
-                    line.Visible = false
-                end
-            else
-                line.Visible = false
-            end
-        else
-            line.Visible = false
-        end
-    end
-end
-
--- FOV Circle
-local function UpdateFOVCircle()
-    if UI.FOVCircle then
-        UI.FOVCircle.Size = UDim2.new(0, Settings.FOV * 2, 0, Settings.FOV * 2)
-        UI.FOVCircle.Visible = Settings.ShowFOV
-    end
-end
-
--- Aimbot
-local function GetClosestTarget()
-    local bestPlayer = nil
-    local bestDist = math.huge
-    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and IsTargetValid(player) then
-            local char = GetCharacter(player)
-            local pos = GetTargetPosition(char)
-            if pos then
-                local screenPos, onScreen = WorldToScreen(pos)
-                if onScreen and IsInsideFOV(screenPos) then
-                    local dist = (screenPos - center).Magnitude
-                    if dist < bestDist then
-                        bestDist = dist
-                        bestPlayer = player
-                    end
-                end
+    -- Procura o objeto da fase no workspace
+    for _, folderName in ipairs(stageFolders) do
+        local folder = Workspace:FindFirstChild(folderName)
+        if folder then
+            local stageObj = folder:FindFirstChild(SelectedStage)
+            if stageObj then
+                TeleportToStage(stageObj)
+                return
             end
         end
     end
-    return bestPlayer
-end
+end)
 
-local function AimAtTarget(target)
-    local char = GetCharacter(target)
-    if not char then return end
-    local targetPos = GetTargetPosition(char)
-    if not targetPos then return end
+local BaseSection = TeleportsTab:CreateSection("Base")
+TeleportsTab:CreateButton("Teleport To Base", function()
+    TeleportToBase()
+end)
 
-    local camCF = Camera.CFrame
-    local desiredCF = CFrame.lookAt(camCF.Position, targetPos)
-    local smoothFactor = 1 / Settings.Smoothness
-    Camera.CFrame = camCF:Lerp(desiredCF, math.clamp(smoothFactor, 0.01, 1))
-end
-
-local function UpdateAimbot()
-    if not Settings.Aimbot then
-        CurrentTarget = nil
-        lastNotifiedTarget = nil
-        return
-    end
-
-    if Settings.Aimlock and CurrentTarget and IsTargetValid(CurrentTarget) then
-        local char = GetCharacter(CurrentTarget)
-        if char then
-            local pos = GetTargetPosition(char)
-            if pos then
-                local screenPos, onScreen = WorldToScreen(pos)
-                if onScreen and IsInsideFOV(screenPos) then
-                    AimAtTarget(CurrentTarget)
-                    return
-                end
-            end
-        end
-        CurrentTarget = nil
-    end
-
-    local newTarget = GetClosestTarget()
-    if newTarget then
-        CurrentTarget = newTarget
-        AimAtTarget(newTarget)
-        if newTarget ~= lastNotifiedTarget then
-            CreateNotification("Target: " .. newTarget.Name)
-            lastNotifiedTarget = newTarget
-        end
+local EggTPSection = TeleportsTab:CreateSection("Ovos")
+TeleportsTab:CreateButton("Teleport In Egg", function()
+    -- Teleporta para o primeiro ovo encontrado no registro
+    local firstEgg = next(DetectedEggs)
+    if firstEgg then
+        TeleportToEgg(firstEgg)
     else
-        if CurrentTarget then
-            CreateNotification("Target Lost")
-            CurrentTarget = nil
-            lastNotifiedTarget = nil
+        Rayfield:Notify({Title = "Aviso", Content = "Nenhum ovo detectado no mapa.", Duration = 3})
+    end
+end)
+
+-- 🥚 ABA EGGS
+local EggsTab = Window:CreateTab("Eggs", 4483362458)
+local RareDetectorSection = EggsTab:CreateSection("Rare Egg Detector")
+
+local RareDetectorToggle = EggsTab:CreateToggle({
+    Name = "Rare Egg Detector",
+    CurrentValue = false,
+    Flag = "RareDetector",
+    Callback = function(Value)
+        RareEggDetectorEnabled = Value
+    end
+})
+
+local LastEggSection = EggsTab:CreateSection("Last Rare Egg")
+local EggNameLabel = EggsTab:CreateLabel("Egg: Nenhum")
+local EggRarityLabel = EggsTab:CreateLabel("Rarity: Nenhuma")
+
+-- Função para atualizar labels do último ovo
+task.spawn(function()
+    while true do
+        EggNameLabel:Set("Egg: " .. LastRareEggData.Name)
+        EggRarityLabel:Set("Rarity: " .. LastRareEggData.Rarity)
+        task.wait(1)
+    end
+end)
+
+EggsTab:CreateButton("Teleport To Last Rare Egg", function()
+    if LastRareEggData.Object then
+        TeleportToEgg(LastRareEggData.Object)
+    else
+        Rayfield:Notify({Title = "Erro", Content = "Ovo não disponível ou não detectado.", Duration = 5})
+    end
+end)
+
+local EggListSection = EggsTab:CreateSection("Detected Eggs")
+local EggListDropdown = EggsTab:CreateDropdown("Lista de Ovos", {}, function(option)
+    -- A lógica de teleporte é feita no botão abaixo
+end)
+
+local SelectedEggObj = nil
+
+-- Atualizador do Dropdown
+task.spawn(function()
+    while true do
+        local options = {}
+        for obj, data in pairs(DetectedEggs) do
+            table.insert(options, string.format("%s [%s]", data.Name, data.Rarity))
+        end
+        EggListDropdown:Set(options)
+        task.wait(5)
+    end
+end)
+
+EggsTab:CreateButton("Teleport To Selected Egg", function()
+    -- Como o dropdown do Rayfield retorna o texto, precisamos achar o objeto correspondente
+    local selectedText = EggListDropdown.CurrentValue
+    if not selectedText then return end
+
+    for obj, data in pairs(DetectedEggs) do
+        if string.format("%s [%s]", data.Name, data.Rarity) == selectedText then
+            TeleportToEgg(obj)
+            return
         end
     end
-end
+end)
 
--- UI Components
-local function CreateToggle(parent, label, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 30)
-    frame.BackgroundTransparency = 1
-    frame.Parent = parent
+-- ⚙️ ABA SETTINGS
+local SettingsTab = Window:CreateTab("Settings", 4483362458)
+local ConfigSection = SettingsTab:CreateSection("Configurações")
 
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0.6, 0, 1, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = label
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 14
-    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = frame
-
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(0, 44, 0, 22)
-    button.Position = UDim2.new(1, -44, 0.5, -11)
-    button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    button.BorderSizePixel = 0
-    button.Text = ""
-    button.AutoButtonColor = false
-    button.Parent = frame
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)
-    corner.Parent = button
-
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 18, 0, 18)
-    knob.Position = UDim2.new(0, 2, 0.5, -9)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.BorderSizePixel = 0
-    knob.Parent = button
-
-    local knobCorner = Instance.new("UICorner")
-    knobCorner.CornerRadius = UDim.new(1, 0)
-    knobCorner.Parent = knob
-
-    local state = false
-    local function UpdateVisual()
-        if state then
-            button.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-            knob.Position = UDim2.new(1, -20, 0.5, -9)
-        else
-            button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-            knob.Position = UDim2.new(0, 2, 0.5, -9)
-        end
+SettingsTab:CreateToggle({
+    Name = "Notifications",
+    CurrentValue = true,
+    Flag = "Notifs",
+    Callback = function(Value)
+        NotificationsEnabled = Value
     end
+})
 
-    button.MouseButton1Click:Connect(function()
-        state = not state
-        UpdateVisual()
-        if callback then callback(state) end
-    end)
+SettingsTab:CreateLabel("Script Status: Ativo")
+SettingsTab:CreateLabel("Ambiente: Teste Autorizado")
 
-    return function(newState)
-        if newState ~= state then
-            state = newState
-            UpdateVisual()
-        end
-    end
-end
+-- =============================================================================
+-- INITIALIZATION
+-- =============================================================================
 
-local function CreateSlider(parent, label, min, max, default, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 40)
-    frame.BackgroundTransparency = 1
-    frame.Parent = parent
+InitializeEggMonitor()
 
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0.4, 0, 1, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = label
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 14
-    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = frame
-
-    local valLbl = Instance.new("TextLabel")
-    valLbl.Size = UDim2.new(0.2, 0, 1, 0)
-    valLbl.Position = UDim2.new(0.4, 0, 0, 0)
-    valLbl.BackgroundTransparency = 1
-    valLbl.Text = tostring(default)
-    valLbl.Font = Enum.Font.GothamBold
-    valLbl.TextSize = 14
-    valLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-    valLbl.TextXAlignment = Enum.TextXAlignment.Right
-    valLbl.Parent = frame
-
-    local bg = Instance.new("Frame")
-    bg.Size = UDim2.new(1, 0, 0, 6)
-    bg.Position = UDim2.new(0, 0, 0.7, -3)
-    bg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    bg.BorderSizePixel = 0
-    bg.Parent = frame
-
-    local bgCorner = Instance.new("UICorner")
-    bgCorner.CornerRadius = UDim.new(1, 0)
-    bgCorner.Parent = bg
-
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-    fill.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-    fill.BorderSizePixel = 0
-    fill.Parent = bg
-
-    local fillCorner = Instance.new("UICorner")
-    fillCorner.CornerRadius = UDim.new(1, 0)
-    fillCorner.Parent = fill
-
-    local handle = Instance.new("Frame")
-    handle.Size = UDim2.new(0, 14, 0, 14)
-    handle.Position = UDim2.new((default - min) / (max - min), -7, 0.5, -7)
-    handle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    handle.BorderSizePixel = 0
-    handle.Parent = bg
-
-    local handleCorner = Instance.new("UICorner")
-    handleCorner.CornerRadius = UDim.new(1, 0)
-    handleCorner.Parent = handle
-
-    local dragging = false
-    local function UpdateFromMouse(x)
-        local relX = math.clamp(x - bg.AbsolutePosition.X, 0, bg.AbsoluteSize.X)
-        local t = relX / bg.AbsoluteSize.X
-        local val = math.floor(min + t * (max - min) + 0.5)
-        val = math.clamp(val, min, max)
-        valLbl.Text = tostring(val)
-        fill.Size = UDim2.new(t, 0, 1, 0)
-        handle.Position = UDim2.new(t, -7, 0.5, -7)
-        if callback then callback(val) end
-    end
-
-    bg.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            UpdateFromMouse(input.Position.X)
-        end
-    end)
-    bg.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            UpdateFromMouse(input.Position.X)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
-    end)
-
-    return function(newVal)
-        newVal = math.clamp(newVal, min, max)
-        valLbl.Text = tostring(newVal)
-        local t = (newVal - min) / (max - min)
-        fill.Size = UDim2.new(t, 0, 1, 0)
-        handle.Position = UDim2.new(t, -7, 0.5, -7)
-    end
-end
-
-local function CreateDropdown(parent, label, options, default, callback)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 40)
-    frame.BackgroundTransparency = 1
-    frame.Parent = parent
-
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(0.4, 0, 1, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = label
-    lbl.Font = Enum.Font.GothamBold
-    lbl.TextSize = 14
-    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = frame
-
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.6, 0, 0, 30)
-    btn.Position = UDim2.new(0.4, 0, 0.5, -15)
-    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    btn.BorderSizePixel = 0
-    btn.Text = default
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 14
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.AutoButtonColor = false
-    btn.Parent = frame
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = btn
-
-    local list = nil
-    local isOpen = false
-
-    local function CloseList()
-        if list then list:Destroy(); list = nil end
-        isOpen = false
-    end
-
-    local function OpenList()
-        if isOpen then CloseList() return end
-        isOpen = true
-        list = Instance.new("Frame")
-        list.Size = UDim2.new(0.6, 0, 0, #options * 30)
-        list.Position = UDim2.new(0.4, 0, 0.5, 15)
-        list.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-        list.BorderSizePixel = 0
-        list.ZIndex = 10
-        list.Parent = frame
-
-        local listCorner = Instance.new("UICorner")
-        listCorner.CornerRadius = UDim.new(0, 6)
-        listCorner.Parent = list
-
-        for i, option in ipairs(options) do
-            local optBtn = Instance.new("TextButton")
-            optBtn.Size = UDim2.new(1, 0, 0, 30)
-            optBtn.Position = UDim2.new(0, 0, 0, (i-1)*30)
-            optBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-            optBtn.BorderSizePixel = 0
-            optBtn.Text = option
-            optBtn.Font = Enum.Font.GothamBold
-            optBtn.TextSize = 14
-            optBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-            optBtn.AutoButtonColor = false
-            optBtn.Parent = list
-
-            local optCorner = Instance.new("UICorner")
-            optCorner.CornerRadius = UDim.new(0, 4)
-            optCorner.Parent = optBtn
-
-            optBtn.MouseButton1Click:Connect(function()
-                btn.Text = option
-                CloseList()
-                if callback then callback(option) end
-            end)
-
-            optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = Color3.fromRGB(70,70,70) end)
-            optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = Color3.fromRGB(50,50,50) end)
-        end
-    end
-
-    btn.MouseButton1Click:Connect(OpenList)
-
-    UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and isOpen then
-            local pos = UserInputService:GetMouseLocation()
-            local inBtn = pos.X >= btn.AbsolutePosition.X and pos.X <= btn.AbsolutePosition.X + btn.AbsoluteSize.X
-                and pos.Y >= btn.AbsolutePosition.Y and pos.Y <= btn.AbsolutePosition.Y + btn.AbsoluteSize.Y
-            local inList = list and (pos.X >= list.AbsolutePosition.X and pos.X <= list.AbsolutePosition.X + list.AbsoluteSize.X
-                and pos.Y >= list.AbsolutePosition.Y and pos.Y <= list.AbsolutePosition.Y + list.AbsoluteSize.Y)
-            if not inBtn and not inList then CloseList() end
-        end
-    end)
-
-    return function(newValue) btn.Text = newValue end
-end
-
--- UI Principal
-local function CreateUI()
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "VenyCombatPanel"
-    screenGui.ResetOnSpawn = false
-    screenGui.Parent = LocalPlayer.PlayerGui
-    UI.ScreenGui = screenGui
-
-    -- Sombra
-    local shadow = Instance.new("Frame")
-    shadow.Size = UDim2.new(0, 320, 0, 520)
-    shadow.Position = UDim2.new(0.5, -160, 0.5, -260)
-    shadow.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    shadow.BackgroundTransparency = 0.5
-    shadow.BorderSizePixel = 0
-    shadow.Parent = screenGui
-
-    local shadowCorner = Instance.new("UICorner")
-    shadowCorner.CornerRadius = UDim.new(0, 12)
-    shadowCorner.Parent = shadow
-
-    -- Painel principal
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 310, 0, 510)
-    mainFrame.Position = UDim2.new(0.5, -155, 0.5, -255)
-    mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-    mainFrame.BorderSizePixel = 0
-    mainFrame.Parent = screenGui
-    UI.MainFrame = mainFrame
-
-    local mainCorner = Instance.new("UICorner")
-    mainCorner.CornerRadius = UDim.new(0, 12)
-    mainCorner.Parent = mainFrame
-
-    local mainStroke = Instance.new("UIStroke")
-    mainStroke.Color = Color3.fromRGB(0, 200, 100)
-    mainStroke.Thickness = 2
-    mainStroke.Transparency = 0.5
-    mainStroke.Parent = mainFrame
-
-    -- Cabeçalho
-    local header = Instance.new("Frame")
-    header.Size = UDim2.new(1, 0, 0, 40)
-    header.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
-    header.BorderSizePixel = 0
-    header.Parent = mainFrame
-
-    local headerCorner = Instance.new("UICorner")
-    headerCorner.CornerRadius = UDim.new(0, 12)
-    headerCorner.Parent = header
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.6, 0, 1, 0)
-    title.Position = UDim2.new(0, 10, 0, 0)
-    title.BackgroundTransparency = 1
-    title.Text = "Veny Combat Panel"
-    title.Font = Enum.Font.GothamBlack
-    title.TextSize = 18
-    title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = header
-
-    -- Botão minimizar
-    local minimizeBtn = Instance.new("TextButton")
-    minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
-    minimizeBtn.Position = UDim2.new(1, -70, 0.5, -15)
-    minimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    minimizeBtn.BorderSizePixel = 0
-    minimizeBtn.Text = "—"
-    minimizeBtn.Font = Enum.Font.GothamBold
-    minimizeBtn.TextSize = 18
-    minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    minimizeBtn.AutoButtonColor = false
-    minimizeBtn.Parent = header
-
-    local minCorner = Instance.new("UICorner")
-    minCorner.CornerRadius = UDim.new(0, 6)
-    minCorner.Parent = minimizeBtn
-
-    -- Botão fechar
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Size = UDim2.new(0, 30, 0, 30)
-    closeBtn.Position = UDim2.new(1, -35, 0.5, -15)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
-    closeBtn.BorderSizePixel = 0
-    closeBtn.Text = "✕"
-    closeBtn.Font = Enum.Font.GothamBold
-    closeBtn.TextSize = 16
-    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    closeBtn.AutoButtonColor = false
-    closeBtn.Parent = header
-
-    local closeCorner = Instance.new("UICorner")
-    closeCorner.CornerRadius = UDim.new(0, 6)
-    closeCorner.Parent = closeBtn
-
-    -- Área de conteúdo
-    local content = Instance.new("ScrollingFrame")
-    content.Size = UDim2.new(1, 0, 1, -40)
-    content.Position = UDim2.new(0, 0, 0, 40)
-    content.BackgroundTransparency = 1
-    content.BorderSizePixel = 0
-    content.ScrollBarThickness = 5
-    content.ScrollBarImageColor3 = Color3.fromRGB(0, 200, 100)
-    content.CanvasSize = UDim2.new(0, 0, 0, 700)
-    content.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    content.Parent = mainFrame
-
-    local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 5)
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Parent = content
-
-    -- Container de notificações
-    NotificationContainer = Instance.new("Frame")
-    NotificationContainer.Size = UDim2.new(1, 0, 1, 0)
-    NotificationContainer.BackgroundTransparency = 1
-    NotificationContainer.ZIndex = 100
-    NotificationContainer.Parent = screenGui
-
-    -- Círculo FOV
-    local fovCircle = Instance.new("Frame")
-    fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
-    fovCircle.Position = UDim2.new(0.5, 0, 0.5, 0)
-    fovCircle.Size = UDim2.new(0, Settings.FOV * 2, 0, Settings.FOV * 2)
-    fovCircle.BackgroundTransparency = 1
-    fovCircle.BorderSizePixel = 0
-    fovCircle.ZIndex = 3
-    fovCircle.Visible = Settings.ShowFOV
-    fovCircle.Parent = screenGui
-    UI.FOVCircle = fovCircle
-
-    local fovCorner = Instance.new("UICorner")
-    fovCorner.CornerRadius = UDim.new(1, 0)
-    fovCorner.Parent = fovCircle
-
-    local fovStroke = Instance.new("UIStroke")
-    fovStroke.Color = Color3.fromRGB(255, 255, 255)
-    fovStroke.Thickness = 2
-    fovStroke.Transparency = 0.7
-    fovStroke.Parent = fovCircle
-
-    -- Arrastar painel
-    local dragging = false
-    local dragStart = nil
-    local startPos = nil
-
-    header.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = mainFrame.Position
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local delta = input.Position - dragStart
-            mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            shadow.Position = mainFrame.Position + UDim2.new(0, -5, 0, -5)
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
-    end)
-
-    -- Minimizar
-    local isMinimized = false
-    minimizeBtn.MouseButton1Click:Connect(function()
-        isMinimized = not isMinimized
-        content.Visible = not isMinimized
-        mainFrame.Size = isMinimized and UDim2.new(0, 310, 0, 40) or UDim2.new(0, 310, 0, 510)
-        shadow.Size = isMinimized and UDim2.new(0, 320, 0, 50) or UDim2.new(0, 320, 0, 520)
-    end)
-
-    -- Fechar
-    closeBtn.MouseButton1Click:Connect(function()
-        Cleanup()
-        screenGui:Destroy()
-    end)
-
-    -- Seções
-    local visualsSection = Instance.new("Frame")
-    visualsSection.Size = UDim2.new(1, 0, 0, 100)
-    visualsSection.BackgroundTransparency = 1
-    visualsSection.Parent = content
-
-    local visualsTitle = Instance.new("TextLabel")
-    visualsTitle.Size = UDim2.new(1, 0, 0, 25)
-    visualsTitle.BackgroundTransparency = 1
-    visualsTitle.Text = "VISUALS"
-    visualsTitle.Font = Enum.Font.GothamBlack
-    visualsTitle.TextSize = 15
-    visualsTitle.TextColor3 = Color3.fromRGB(0, 200, 100)
-    visualsTitle.TextXAlignment = Enum.TextXAlignment.Left
-    visualsTitle.Parent = visualsSection
-
-    -- ESP Toggle
-    local espSetState = CreateToggle(visualsSection, "ESP", function(state)
-        Settings.ESP = state
-        if state then
-            CreateNotification("ESP Enabled")
-            UpdateESP()
-        else
-            CreateNotification("ESP Disabled")
-            UpdateESP()
-        end
-    end)
-    espSetState(Settings.ESP)
-
-    -- Tracers Toggle
-    local tracerSetState = CreateToggle(visualsSection, "Tracers", function(state)
-        Settings.Tracers = state
-        if state then
-            CreateNotification("Tracers Enabled")
-            -- Garantir que existam tracers para todos os jogadores
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer then CreateTracer(p) end
-            end
-        else
-            CreateNotification("Tracers Disabled")
-        end
-    end)
-    tracerSetState(Settings.Tracers)
-
-    -- Seção AIM
-    local aimSection = Instance.new("Frame")
-    aimSection.Size = UDim2.new(1, 0, 0, 400)
-    aimSection.BackgroundTransparency = 1
-    aimSection.Parent = content
-
-    local aimTitle = Instance.new("TextLabel")
-    aimTitle.Size = UDim2.new(1, 0, 0, 25)
-    aimTitle.BackgroundTransparency = 1
-    aimTitle.Text = "AIM"
-    aimTitle.Font = Enum.Font.GothamBlack
-    aimTitle.TextSize = 15
-    aimTitle.TextColor3 = Color3.fromRGB(0, 200, 100)
-    aimTitle.TextXAlignment = Enum.TextXAlignment.Left
-    aimTitle.Parent = aimSection
-
-    -- Aimbot
-    local aimbotSetState = CreateToggle(aimSection, "Aimbot", function(state)
-        Settings.Aimbot = state
-        if state then
-            CreateNotification("Aimbot Enabled")
-        else
-            CreateNotification("Aimbot Disabled")
-            CurrentTarget = nil
-            lastNotifiedTarget = nil
-        end
-    end)
-    aimbotSetState(Settings.Aimbot)
-
-    -- Aimlock
-    local aimlockSetState = CreateToggle(aimSection, "Aimlock", function(state)
-        Settings.Aimlock = state
-        if state then CreateNotification("Aimlock Enabled") else CreateNotification("Aimlock Disabled") end
-    end)
-    aimlockSetState(Settings.Aimlock)
-
-    -- Target Part Dropdown
-    local targetPartSet = CreateDropdown(aimSection, "Target Part", {"Head", "Neck", "Chest"}, Settings.TargetPart, function(option)
-        Settings.TargetPart = option
-        CreateNotification("Target Part: " .. option)
-    end)
-    targetPartSet(Settings.TargetPart)
-
-    -- FOV Slider
-    local fovSet = CreateSlider(aimSection, "FOV Size", 20, 500, Settings.FOV, function(val)
-        Settings.FOV = val
-        UpdateFOVCircle()
-    end)
-    fovSet(Settings.FOV)
-
-    -- Show FOV Toggle
-    local showFOVSetState = CreateToggle(aimSection, "Show FOV", function(state)
-        Settings.ShowFOV = state
-        UpdateFOVCircle()
-    end)
-    showFOVSetState(Settings.ShowFOV)
-
-    -- Aim Smoothness Slider
-    local smoothSet = CreateSlider(aimSection, "Aim Smoothness", 1, 20, Settings.Smoothness, function(val)
-        Settings.Smoothness = val
-    end)
-    smoothSet(Settings.Smoothness)
-
-    -- Team Check Toggle
-    local teamCheckSetState = CreateToggle(aimSection, "Team Check", function(state)
-        Settings.TeamCheck = state
-    end)
-    teamCheckSetState(Settings.TeamCheck)
-
-    -- Visibility Check Toggle
-    local visCheckSetState = CreateToggle(aimSection, "Visibility Check", function(state)
-        Settings.VisibilityCheck = state
-    end)
-    visCheckSetState(Settings.VisibilityCheck)
-
-    -- Max Distance Slider
-    local maxDistSet = CreateSlider(aimSection, "Max Distance", 50, 5000, Settings.MaxDistance, function(val)
-        Settings.MaxDistance = val
-    end)
-    maxDistSet(Settings.MaxDistance)
-
-    return screenGui
-end
-
--- Inicialização
-local function Init()
-    local screenGui = CreateUI()
-
-    UpdateESP()
-    UpdateFOVCircle()
-
-    -- Conectar eventos de jogadores
-    local function onPlayerAdded(player)
-        if player ~= LocalPlayer then
-            if Settings.ESP then CreateESP(player) end
-            if Settings.Tracers then CreateTracer(player) end
-        end
-    end
-
-    local function onPlayerRemoving(player)
-        if player ~= LocalPlayer then
-            RemoveESP(player)
-            RemoveTracer(player)
-            if CurrentTarget == player then
-                CurrentTarget = nil
-                lastNotifiedTarget = nil
-            end
-        end
-    end
-
-    for _, p in ipairs(Players:GetPlayers()) do onPlayerAdded(p) end
-
-    Connections[#Connections + 1] = Players.PlayerAdded:Connect(onPlayerAdded)
-    Connections[#Connections + 1] = Players.PlayerRemoving:Connect(onPlayerRemoving)
-
-    -- Respawn
-    local function onCharacterAdded(player, character)
-        if player ~= LocalPlayer then
-            if Settings.ESP then
-                RemoveESP(player)
-                task.wait(0.1)
-                CreateESP(player)
-            end
-            -- Tracers não precisam ser recriados, apenas atualizados
-        end
-    end
-
-    Connections[#Connections + 1] = Players.PlayerAdded:Connect(function(player)
-        player.CharacterAdded:Connect(function(char) onCharacterAdded(player, char) end)
-    end)
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            Connections[#Connections + 1] = p.CharacterAdded:Connect(function(char) onCharacterAdded(p, char) end)
-        end
-    end
-
-    -- RenderStepped
-    local renderConn
-    renderConn = RunService.RenderStepped:Connect(function()
-        UpdateTracers()
-        UpdateFOVCircle()
-        UpdateAimbot()
-    end)
-    Connections[#Connections + 1] = renderConn
-
-    screenGui.Destroying:Connect(function()
-        Cleanup()
-    end)
-end
-
-function Cleanup()
-    for _, conn in ipairs(Connections) do
-        if typeof(conn) == "RBXScriptConnection" then conn:Disconnect() end
-    end
-    Connections = {}
-
-    for _, gui in pairs(ESPObjects) do gui:Destroy() end
-    ESPObjects = {}
-
-    for _, line in pairs(TracerFrames) do line:Destroy() end
-    TracerFrames = {}
-
-    if UI.FOVCircle then UI.FOVCircle:Destroy(); UI.FOVCircle = nil end
-    CurrentTarget = nil
-    lastNotifiedTarget = nil
-end
-
--- Executar
-Init()
+Rayfield:Notify({
+    Title = "Hub Iniciado!",
+    Content = "Bem-vindo ao Roube Um Ovo Hub. Boa sorte!",
+    Duration = 5
+})
