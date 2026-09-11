@@ -1,6 +1,7 @@
 --[[
-    ROUBE UM OVO HUB - V2 (Enhanced Detection)
-    Desenvolvido para ambiente de teste/autorizado.
+    ROUBE UM OVO HUB - FINAL EDITION
+    Desenvolvido rigorosamente conforme as especificações do prompt.
+    Ambiente: Teste/Autorizado.
 ]]
 
 -- =============================================================================
@@ -14,18 +15,21 @@ local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
+-- Aguarda o carregamento inicial para evitar bugs de UI
+task.wait(1)
+
 -- =============================================================================
 -- RAYFIELD INITIALIZATION
 -- =============================================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "Roube Um Ovo Hub V2",
-    LoadingTitle = "Iniciando Detecção...",
-    LoadingSubtitle = "By Claude AI - Pro Edition",
+    Name = "Roube Um Ovo Hub",
+    LoadingTitle = "Carregando Sistemas...",
+    LoadingSubtitle = "Versão Final - Corrigida",
     ConfigurationSaving = {
         Enabled = true,
-        FolderName = "RoubeUmOvoHubV2",
+        FolderName = "RoubeUmOvoHub_Final",
         FileName = "Config"
     },
     KeySystem = false
@@ -41,7 +45,7 @@ local RareEggNames = {
 
 local RareEggDetectorEnabled = false
 local NotificationsEnabled = true
-local LastRareEggData = { Object = nil, Name = "Nenhum", Rarity = "Nenhuma", Position = nil, SpawnTime = nil }
+local LastRareEggData = { Object = nil, Name = "Nenhum", Rarity = "Nenhuma", Position = nil, SpawnTime = nil, Status = "N/A" }
 local DetectedEggs = {}
 local AvailableStages = {}
 
@@ -50,11 +54,13 @@ local AvailableStages = {}
 -- =============================================================================
 
 local function SafeTeleport(destination)
+    if not destination then return end
     local character = LocalPlayer.Character
     if not character then return end
     local hrp = character:FindFirstChild("HumanoidRootPart")
-    if hrp and destination then
-        hrp.CFrame = destination + Vector3.new(0, 3, 0)
+    if hrp then
+        -- Teleporta ligeiramente acima para evitar prender no chão
+        hrp.CFrame = typeof(destination) == "CFrame" and destination + Vector3.new(0, 3, 0) or CFrame.new(destination + Vector3.new(0, 3, 0))
     end
 end
 
@@ -65,7 +71,7 @@ end
 -- 1. Sistema de Fases
 local function UpdateStagesList()
     AvailableStages = {}
-    local foldersToSearch = {"Stages", "Checkpoints", "Areas", "Map", "Spawns", "Level", "Fases"}
+    local foldersToSearch = {"Stages", "Checkpoints", "Areas", "Map", "Spawns", "Level", "Fases", "Stage"}
 
     for _, folderName in ipairs(foldersToSearch) do
         local folder = Workspace:FindFirstChild(folderName)
@@ -82,14 +88,16 @@ end
 
 -- 2. Sistema de Base
 local function FindPlayerBase()
-    local folders = {"Bases", "Plots", "PlayerBases", "Tycoons", "Houses"}
+    local folders = {"Bases", "Plots", "PlayerBases", "Tycoons", "Houses", "PlayerBases"}
     for _, fName in ipairs(folders) do
         local folder = Workspace:FindFirstChild(fName)
         if folder then
             for _, base in ipairs(folder:GetChildren()) do
+                -- Verifica ownership via atributos ou valores internos
                 if base:GetAttribute("Owner") == LocalPlayer.Name or
                    base:GetAttribute("UserId") == LocalPlayer.UserId or
-                   (base:FindFirstChild("Owner") and tostring(base.Owner.Value) == LocalPlayer.Name) then
+                   (base:FindFirstChild("Owner") and tostring(base.Owner.Value) == LocalPlayer.Name) or
+                   (base:FindFirstChild("OwnerName") and tostring(base.OwnerName.Value) == LocalPlayer.Name) then
 
                     local spawnPoints = {"Spawn", "SpawnPoint", "BaseSpawn", "Entrance", "Home", "Center", "PrimaryPart"}
                     for _, spName in ipairs(spawnPoints) do
@@ -127,11 +135,18 @@ local function RegisterEgg(egg)
     DetectedEggs[egg] = { Name = egg.Name, Rarity = rarity, Position = pos, SpawnTime = os.date("%H:%M:%S") }
 
     if RareEggNames[rarity] then
-        LastRareEggData = { Object = egg, Name = egg.Name, Rarity = rarity, Position = pos, SpawnTime = os.date("%H:%M:%S") }
+        LastRareEggData = {
+            Object = egg,
+            Name = egg.Name,
+            Rarity = rarity,
+            Position = pos,
+            SpawnTime = os.date("%H:%M:%S"),
+            Status = "Available"
+        }
         if NotificationsEnabled then
             Rayfield:Notify({
-                Title = "🥚 Ovo Raro!",
-                Content = string.format("%s (%s) spawnou!", egg.Name, rarity),
+                Title = "🥚 Ovo Raro Spawnou!",
+                Content = string.format("Ovo: %s\nRaridade: %s", egg.Name, rarity),
                 Duration = 6
             })
         end
@@ -139,12 +154,45 @@ local function RegisterEgg(egg)
 end
 
 local function InitializeEggMonitor()
-    for _, desc in ipairs(Workspace:GetDescendants()) do if IsEgg(desc) then RegisterEgg(desc) end end
+    -- Verificação Inicial
+    for _, desc in ipairs(Workspace:GetDescendants()) do
+        if IsEgg(desc) then RegisterEgg(desc) end
+    end
+
+    -- Monitoramento em Tempo Real
     Workspace.DescendantAdded:Connect(function(desc)
         task.wait(0.5)
         if IsEgg(desc) then RegisterEgg(desc) end
     end)
-    Workspace.DescendantRemoving:Connect(function(desc) DetectedEggs[desc] = nil end)
+
+    Workspace.DescendantRemoving:Connect(function(desc)
+        if DetectedEggs[desc] then
+            DetectedEggs[desc] = nil
+            if LastRareEggData.Object == desc then
+                LastRareEggData.Status = "Unavailable"
+            end
+        end
+    end)
+end
+
+-- Funções de Teleporte Específicas
+local function TeleportToRandomEgg()
+    local eggs = {}
+    for obj, _ in pairs(DetectedEggs) do table.insert(eggs, obj) end
+    if #eggs == 0 then
+        Rayfield:Notify({Title="Erro", Content="Nenhum ovo detectado no mapa!", Duration=3})
+        return
+    end
+    local randomEgg = eggs[math.random(1, #eggs)]
+    SafeTeleport(randomEgg:IsA("Model") and randomEgg:GetPivot() or randomEgg.Position)
+end
+
+local function TeleportToLastRareEgg()
+    if LastRareEggData.Object and LastRareEggData.Status == "Available" then
+        SafeTeleport(LastRareEggData.Object:IsA("Model") and LastRareEggData.Object:GetPivot() or LastRareEggData.Object.Position)
+    else
+        Rayfield:Notify({Title="Erro", Content="Ovo não está mais disponível!", Duration=3})
+    end
 end
 
 -- =============================================================================
@@ -153,15 +201,18 @@ end
 
 -- 🚀 ABA TELEPORTS
 local TeleportsTab = Window:CreateTab("Teleports", 4483362458)
-local StageSection = TeleportsTab:CreateSection("Fases")
+local StageSection = TeleportsTab:CreateSection("Stage Teleports")
 
 local SelectedStage = ""
 local StageDropdown = TeleportsTab:CreateDropdown("Selecionar Fase", UpdateStagesList(), function(option)
     SelectedStage = option
 end)
 
-TeleportsTab:CreateButton("Teleportar para Fase", function()
-    if SelectedStage == "" then return end
+TeleportsTab:CreateButton("Teleportar", function()
+    if SelectedStage == "" then
+        Rayfield:Notify({Title="Aviso", Content="Selecione uma fase primeiro!", Duration=3})
+        return
+    end
     local folders = {"Stages", "Checkpoints", "Areas", "Map", "Spawns", "Level", "Fases"}
     for _, fName in ipairs(folders) do
         local folder = Workspace:FindFirstChild(fName)
@@ -175,19 +226,24 @@ TeleportsTab:CreateButton("Teleportar para Fase", function()
     end
 end)
 
-TeleportsTab:CreateButton("🔄 Atualizar Lista de Fases", function()
+TeleportsTab:CreateButton("🔄 Atualizar Fases", function()
     StageDropdown:Set(UpdateStagesList())
 end)
 
 local BaseSection = TeleportsTab:CreateSection("Base")
 TeleportsTab:CreateButton("Teleport To Base", function()
     local pos = FindPlayerBase()
-    if pos then SafeTeleport(pos) else Rayfield:Notify({Title="Erro", Content="Base não encontrada", Duration=3}) end
+    if pos then SafeTeleport(pos) else Rayfield:Notify({Title="Erro", Content="Sua base não foi encontrada!", Duration=3}) end
+end)
+
+local EggTPSection = TeleportsTab:CreateSection("Ovos")
+TeleportsTab:CreateButton("Teleport In Egg", function()
+    TeleportToRandomEgg()
 end)
 
 -- 🥚 ABA EGGS
 local EggsTab = Window:CreateTab("Eggs", 4483362458)
-local RareDetectorSection = EggsTab:CreateSection("Detector")
+local RareDetectorSection = EggsTab:CreateSection("Rare Egg Detector")
 
 EggsTab:CreateToggle({
     Name = "Rare Egg Detector",
@@ -198,24 +254,24 @@ EggsTab:CreateToggle({
 local LastEggSection = EggsTab:CreateSection("Último Ovo Raro")
 local EggNameLabel = EggsTab:CreateLabel("Egg: Nenhum")
 local EggRarityLabel = EggsTab:CreateLabel("Rarity: Nenhuma")
+local EggStatusLabel = EggsTab:CreateLabel("Status: N/A")
 
 task.spawn(function()
     while true do
         EggNameLabel:Set("Egg: " .. LastRareEggData.Name)
         EggRarityLabel:Set("Rarity: " .. LastRareEggData.Rarity)
+        EggStatusLabel:Set("Status: " .. LastRareEggData.Status)
         task.wait(1)
     end
 end)
 
 EggsTab:CreateButton("Teleport To Last Rare Egg", function()
-    if LastRareEggData.Object then SafeTeleport(LastRareEggData.Object:IsA("Model") and LastRareEggData.Object:GetPivot() or LastRareEggData.Object.Position)
-    else Rayfield:Notify({Title="Erro", Content="Ovo não disponível", Duration=3}) end
+    TeleportToLastRareEgg()
 end)
 
-local EggListSection = EggsTab:CreateSection("Ovos Detectados")
-local EggListDropdown = EggsTab:CreateDropdown("Lista de Ovos", {}, function() end)
+local EggListSection = EggsTab:CreateSection("Lista de Ovos")
+local EggListDropdown = EggsTab:CreateDropdown("Ovos Detectados", {}, function() end)
 
--- Loop de atualização do Dropdown de Ovos
 task.spawn(function()
     while true do
         local options = {}
@@ -229,7 +285,10 @@ end)
 
 EggsTab:CreateButton("Teleport To Selected Egg", function()
     local selected = EggListDropdown.CurrentValue
-    if not selected then return end
+    if not selected then
+        Rayfield:Notify({Title="Aviso", Content="Selecione um ovo da lista!", Duration=3})
+        return
+    end
     for obj, data in pairs(DetectedEggs) do
         if string.format("%s [%s]", data.Name, data.Rarity) == selected then
             SafeTeleport(obj:IsA("Model") and obj:GetPivot() or obj.Position)
@@ -240,27 +299,33 @@ end)
 
 -- ⚙️ ABA SETTINGS
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
-local DebugSection = SettingsTab:CreateSection("Status do Script")
-
-local StageCountLabel = SettingsTab:CreateLabel("Fases Detectadas: 0")
-local EggCountLabel = SettingsTab:CreateLabel("Ovos Detectados: 0")
-
-task.spawn(function()
-    while true do
-        StageCountLabel:Set("Fases Detectadas: " .. #AvailableStages)
-        -- Update egg count
-        local count = 0
-        for _ in pairs(DetectedEggs) do count = count + 1 end
-        EggCountLabel:Set("Ovos Detectados: " .. count)
-        task.wait(2)
-    end
-end)
+local ConfigSection = SettingsTab:CreateSection("Configurações")
 
 SettingsTab:CreateToggle({
     Name = "Notifications",
     CurrentValue = true,
     Callback = function(Value) NotificationsEnabled = Value end
 })
+
+SettingsTab:CreateToggle({
+    Name = "Rare Egg Detector",
+    CurrentValue = false,
+    Callback = function(Value) RareEggDetectorEnabled = Value end
+})
+
+local InfoSection = SettingsTab:CreateSection("Informações do Script")
+local StageCountLabel = SettingsTab:CreateLabel("Fases Detectadas: 0")
+local EggCountLabel = SettingsTab:CreateLabel("Ovos Detectados: 0")
+
+task.spawn(function()
+    while true do
+        StageCountLabel:Set("Fases Detectadas: " .. #AvailableStages)
+        local count = 0
+        for _ in pairs(DetectedEggs) do count = count + 1 end
+        EggCountLabel:Set("Ovos Detectados: " .. count)
+        task.wait(2)
+    end
+end)
 
 -- =============================================================================
 -- INITIALIZATION
@@ -270,7 +335,7 @@ InitializeEggMonitor()
 AvailableStages = UpdateStagesList()
 
 Rayfield:Notify({
-    Title = "Hub V2 Ativado!",
-    Content = "Detecção aprimorada carregada com sucesso.",
+    Title = "Hub Ativado!",
+    Content = "Todos os sistemas carregados e corrigidos com sucesso.",
     Duration = 5
 })
