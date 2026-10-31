@@ -26,7 +26,6 @@
 		AA000017 /* LayerPropertiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000017 /* LayerPropertiesView.swift */; };
 		AA000018 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000018 /* SettingsView.swift */; };
 		AA000100 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB000100 /* Assets.xcassets */; };
-		AA000101 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = AB000101 /* Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -206,7 +205,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA000100 /* Assets.xcassets in Resources */,
-				AA000101 /* Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
