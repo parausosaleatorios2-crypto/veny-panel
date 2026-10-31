@@ -10,8 +10,15 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Xcode version
-        run: xcodebuild -version
+      - name: Generate Xcode project
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          # keep Info.plist values: xcodegen 'info' would overwrite, so back up and restore
+          cp AMZP/Info.plist /tmp/Info.plist
+          rm -rf AMZP.xcodeproj
+          xcodegen generate
+          cp /tmp/Info.plist AMZP/Info.plist
       - name: Build (unsigned)
         run: |
           set -o pipefail
@@ -23,7 +30,7 @@ jobs:
             -derivedDataPath build/dd \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD" || true
-          test -d build/dd/Build/Products/Release-iphoneos/AMZP.app || { grep -B2 -A6 "error:" build.log | head -200; exit 1; }
+          test -f build/dd/Build/Products/Release-iphoneos/AMZP.app/AMZP || { grep -B2 -A6 "error:" build.log | head -200; exit 1; }
       - name: Publish build log on failure
         if: failure()
         run: |
