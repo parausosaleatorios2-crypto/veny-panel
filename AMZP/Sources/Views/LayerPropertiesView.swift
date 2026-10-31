@@ -224,17 +224,15 @@ struct LayerPropertiesView: View {
                 .foregroundColor(.white)
                 .font(.system(size: 14))
             Spacer()
-            if let hex = layer.color {
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(Color(hex: hex))
+                        .fill(Color(hex: layer.color))
                         .frame(width: 22, height: 22)
                         .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
-                    Text(hex)
+                    Text(layer.color)
                         .foregroundColor(.gray)
                         .font(.system(size: 12, design: .monospaced))
                 }
-            }
         }
     }
 }

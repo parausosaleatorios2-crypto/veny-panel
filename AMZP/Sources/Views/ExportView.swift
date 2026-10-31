@@ -131,12 +131,7 @@ struct ExportView: View {
                         .padding(.vertical, 4)
                     }
                     .disabled(isExporting)
-                    .listRowBackground(
-                        isExporting
-                        ? Color.purple.opacity(0.4)
-                        : LinearGradient(colors: [Color(hex: "#1A1AFF"), Color(hex: "#7B2FFF")],
-                                        startPoint: .leading, endPoint: .trailing)
-                    )
+                    .listRowBackground(exportButtonBackground)
                 }
             }
             .scrollContentBackground(.hidden)
@@ -152,8 +147,18 @@ struct ExportView: View {
         .preferredColorScheme(.dark)
     }
 
+    @ViewBuilder
+    private var exportButtonBackground: some View {
+        if isExporting {
+            Color.purple.opacity(0.4)
+        } else {
+            LinearGradient(colors: [Color(hex: "#1A1AFF"), Color(hex: "#7B2FFF")],
+                           startPoint: .leading, endPoint: .trailing)
+        }
+    }
+
     private func startExport() {
-        totalFrames = Int(vm.project.duration * vm.project.frameRate)
+        totalFrames = max(1, Int(vm.project.duration * vm.project.frameRate))
         currentFrame = 0
         exportProgress = 0
         exportDone = false

@@ -14,8 +14,8 @@ class ProjectStore: ObservableObject {
 
     func create(name: String, width: Int = 1080, height: Int = 1920,
                 frameRate: Double = 30, bg: String = "#000000") -> AMZPProject {
-        var p = AMZPProject(name: name, width: width, height: height,
-                            frameRate: frameRate, backgroundColor: bg)
+        var p = AMZPProject(name: name, frameRate: frameRate, width: width, height: height,
+                            backgroundColor: bg)
         p.layers = [
             Layer(name: "Layer 1", type: .video)
         ]
@@ -84,7 +84,7 @@ extension AMZPProject {
             Layer(name: "Title", type: .text),
             Layer(name: "Music", type: .audio)
         ]
-        var p2 = AMZPProject(name: "Intro Animation", width: 1920, height: 1080, frameRate: 60)
+        var p2 = AMZPProject(name: "Intro Animation", frameRate: 60, width: 1920, height: 1080)
         return [p1, p2]
     }
 }

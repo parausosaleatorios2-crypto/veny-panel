@@ -59,9 +59,7 @@ struct EditorView: View {
         .sheet(isPresented: $showNmTools) { NmToolsView(vm: vm) }
         .sheet(isPresented: $showNmLabs) { NmLabsView() }
         .sheet(isPresented: $showLayerProperties) {
-            if let layer = vm.selectedLayer {
-                LayerPropertiesView(vm: vm, layer: layer)
-            }
+            LayerPropertiesView(vm: vm)
         }
         .alert("Leave Editor?", isPresented: $showConfirmLeave) {
             Button("Stay", role: .cancel) {}
