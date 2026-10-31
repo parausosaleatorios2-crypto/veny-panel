@@ -1,0 +1,45 @@
+name: Build AMZP IPA
+on:
+  push:
+    branches: [amzp-build]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Xcode version
+        run: xcodebuild -version
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project AMZP.xcodeproj \
+            -scheme AMZP \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            2>&1 | tee build.log | grep -E "error:|warning: .*deprecated|BUILD" || true
+          test -d build/dd/Build/Products/Release-iphoneos/AMZP.app || { grep -B2 -A6 "error:" build.log | head -200; exit 1; }
+      - name: Package IPA
+        run: |
+          mkdir -p out/Payload
+          cp -R build/dd/Build/Products/Release-iphoneos/AMZP.app out/Payload/
+          cd out && zip -qry AMZP.ipa Payload && ls -la AMZP.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AMZP-ipa
+          path: out/AMZP.ipa
+      - name: Commit IPA to branch
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git fetch origin amzp-build
+          git checkout -B ipa-output
+          mkdir -p dist && cp out/AMZP.ipa dist/AMZP.ipa
+          git add -f dist/AMZP.ipa
+          git commit -m "Built AMZP.ipa"
+          git push -f origin ipa-output
